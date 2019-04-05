@@ -28,9 +28,9 @@ class SleepLearningDataset(object):
     """Sleep Learning dataset."""
 
     def __init__(self, data_dir: str, subject_csv: str, cvfold: int,
-                 num_labels: int, feature_extractor, neighbors, loader,
-                 discard_arts=True, transform=None, verbose=False):
-        assert(neighbors % 2 == 0)
+                 num_labels: int, feature_extractor, neighbors, osnbrs, loader,
+                 discard_arts=True, transform=None, verbose=False, label_nbrs=True):
+        assert(neighbors % 2 == 0) or osnbrs
 
         if num_labels == 5:
             class_remapping = {0: 0, 1: 1, 2: 2, 3: 3,
@@ -76,8 +76,14 @@ class SleepLearningDataset(object):
 
             if neighbors > 0:
                 # pad with zeros before and after (additional '#neighbors' epochs)
+                if osnbrs:
+                    pad_left = neighbors
+                    pad_right = 0
+                else:
+                    pad_left = neighbors // 2
+                    pad_right = neighbors // 2
                 pad_width = (
-                    (neighbors // 2, neighbors // 2), (0, 0), (0, 0))
+                    (pad_left, pad_right), (0, 0), (0, 0))
                 concat_axis = 1
                 if feature_matrix.ndim == 4:
                     pad_width += ((0, 0),)
@@ -86,9 +92,9 @@ class SleepLearningDataset(object):
                                         mode='constant')
                 # create samples with neighbors
                 feature_matrix = np.array([np.concatenate(
-                    feature_matrix[i - neighbors // 2:i + neighbors // 2 + 1],
+                    feature_matrix[i - pad_left:i + pad_right + 1],
                     axis=concat_axis) for i
-                    in range(neighbors // 2, num_epochs + neighbors // 2)])
+                    in range(pad_left, num_epochs + pad_right)])
             num_artifacts = 0
             for e, (sample, label_int) in enumerate(
                     zip(feature_matrix, subject.hypnogram)):
@@ -96,11 +102,27 @@ class SleepLearningDataset(object):
                 if discard_arts and label == 'Artifact':
                     num_artifacts+=1
                     continue
-                class_distribution[label_int] += 1
                 id = subject.label + '_epoch_' + '{0:0>5}'.format(
-                    e) + '_' + str(neighbors) + 'N_' + label
+                    e) + f"_{neighbors}(onesided={osnbrs})N_ + {label}"
 
-                label_int = class_remapping[label_int]
+                # Handle the case when targets for neighbours are also required
+                if neighbors > 0 and label_nbrs:
+                    if osnbrs:
+                        pad_left = neighbors
+                        pad_right = 0
+                    else:
+                        pad_left = neighbors // 2
+                        pad_right = neighbors // 2
+                    nbr_offsets = [off for off in range(-pad_left, pad_right+1)]
+                    label_int = []
+                    for off in nbr_offsets:
+                        singular_label = subject.hypnogram[e+off]
+                        singular_label = subject.hypnogram[e+off-1] if singular_label == 6 else singular_label
+                        class_distribution[singular_label] += 1
+                        label_int.append(class_remapping[singular_label])
+                else:
+                    class_distribution[label_int] += 1
+                    label_int = class_remapping[label_int]
                 self.targets.append(label_int)
                 sample = {'id': id, 'x': sample, 'y': label_int}
                 filename = os.path.join(self.dir, id+'.h5')
@@ -110,8 +132,8 @@ class SleepLearningDataset(object):
                     hf.create_dataset("y", data=sample['y'])
                 self.X.append(filename)
             if verbose:
-                print(f'loaded {subject_file} [{(time.time()-start):.2f}s,'
-                      f' {num_artifacts} artifacts removed]')
+                print('loaded {} [{:.2f}s,'.format(subject_file, (time.time()-start)),
+                      '{} artifacts removed]'.format(num_artifacts))
 
         self.dataset_info = {}
         class_distribution_dict = {}
@@ -254,6 +276,7 @@ def get_model_arch(arch, ms):
          for i in range(len(arch))])
     module_name = module_name if module_name != 'single_chan_expert2' else \
         'single_chan_expert'
+    module_name = module_name if module_name.lower() != "d_s_s_m" else "dssm"
     arch = arch if arch != 'SingleChanExpert2' else 'SingleChanExpert'
     print("module: ", module_name)
     print("arch: ", arch)
@@ -286,8 +309,8 @@ def get_model(arch, ms, class_dist=None, cuda=True, verbose=False):
     elif ms['loss'] == 'nlle':
         criterion = torch.nn.NLLLoss(weight=weights)
     else:
-        raise ValueError(f"loss {ms['loss']} unknown. Please choose "
-                         f"'xentropy' or 'granger'.")
+        raise ValueError("loss {} unknown. Please choose".format(ms['loss']),
+                         "'xentropy' or 'granger'.")
     if verbose:
         print("\nCLASS WEIGHTS (LOSS): \n", weights)
         print('MODEL PARAMS:\n', ms)

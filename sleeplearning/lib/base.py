@@ -17,7 +17,6 @@ from sleeplearning.lib import utils
 import numpy as np
 #from sleeplearning.lib.granger_loss import GrangerLoss
 from torchvision.transforms import Compose
-from sleeplearning.lib.transforms import SensorDropout
 
 
 class Base(object):
@@ -48,7 +47,7 @@ class Base(object):
 
     def fit(self, arch, ms, data_dir, loader, train_csv, val_csv, channels,
             nclasses, fold,
-            nbrs, batch_size_train, batch_size_val, oversample, transforms,
+            nbrs, osnbrs, batch_size_train, batch_size_val, oversample, transforms,
             early_stop=False):
 
         ldr = utils.get_loader(loader)
@@ -63,7 +62,7 @@ class Base(object):
                                               nclasses,
                                               FeatureExtractor(
                                                   channels).get_features(),
-                                              nbrs,
+                                              nbrs, osnbrs,
                                               ldr, discard_arts=True,
                                               transform=transforms,
                                               verbose=self.verbose)
@@ -73,9 +72,9 @@ class Base(object):
                                             nclasses,
                                             FeatureExtractor(
                                                 channels).get_features(),
-                                            nbrs,
+                                            nbrs, osnbrs,
                                             ldr,
-                                            verbose=self.verbose)
+                                            verbose=self.verbose, label_nbrs=False)
 
         print("\nTRAIN LOADER:")
         train_loader = utils.get_sampler(train_ds, batch_size_train,
@@ -89,6 +88,7 @@ class Base(object):
         # save parameters for model reloading
         ms['input_dim'] = train_ds.dataset_info['input_shape']
         ms['nclasses'] = nclasses
+        ms['nbrs'] = nbrs
         self.arch = arch
         self.ms = ms
         self.fold = fold
@@ -96,6 +96,7 @@ class Base(object):
             'loader': loader,
             'channels': channels,
             'nbrs': nbrs,
+            'one_sided_nbrs': osnbrs,
             'nclasses': nclasses,
             'train_dist': list(train_ds.dataset_info['class_distribution']
                                .values())
@@ -127,7 +128,7 @@ class Base(object):
         bestepoch = -1
         stop_train = False
         early_stop_count = 0
-        self.tenacity = 5
+        self.tenacity = 10
 
         while not stop_train and self.nepoch < ms['epochs']:
             self.nepoch += 1
@@ -195,14 +196,14 @@ class Base(object):
                 if self.cudaEfficient:
                     data, target = data.cuda(), target.cuda()
                 # compute output
-                batch_out, loss, metrics = self.predict_batch_(data, target,
+                batch_out, loss, metrics, _ = self.predict_batch_(data, target,
                                                                metrics)
                 if output is None:
                     output = {'y_true': [], 'y_probs': [], 'y_pred': []}
                 output['y_probs'].append(F.softmax(batch_out['logits'], dim=1)
                                          .data.cpu().numpy())
                 output['y_true'].append(target.data.cpu().numpy())
-                output['y_pred'].append(batch_out['y_pred'])
+                output['y_pred'].append(batch_out['y_pred'].data.cpu().numpy())
         for k, v in output.items():
             output[k] = np.concatenate(output[k], axis=0)
 
@@ -226,7 +227,7 @@ class Base(object):
                 if self.cudaEfficient:
                     data, target = data.cuda(), target.cuda()
                 # compute output
-                batch_out, _, _ = self.predict_batch_(data, target,
+                batch_out, _, _, _ = self.predict_batch_(data, target,
                                                       None)
                 pred = batch_out['y_pred']
                 prediction = np.append(prediction, pred.data.cpu().numpy())
@@ -290,6 +291,7 @@ class Base(object):
         self.model.train()
         batch_time = utils.AverageMeter()
         metrics: dict = None
+        aux_losses: dict = None
         predictions: np.array = np.array([], dtype=int)
         targets: np.array = np.array([], dtype=int)
 
@@ -299,16 +301,20 @@ class Base(object):
                 data, target = data.cuda(), target.cuda()
 
             # compute output
-            output, batchloss, metrics = self.predict_batch_(data, target,
+            output, batchloss, metrics, aux_losses = self.predict_batch_(data, target,
                                                                 metrics)
 
-            predictions = np.append(predictions, output['y_pred'])
+            predictions = np.append(predictions, output['y_pred'].data.cpu().numpy())
             targets = np.append(targets, target.data.cpu().numpy())
 
             # compute gradient and do Adam step if model has any trainable
             # parameters (not just averaging trained experts)
             if self.optimizer:
                 self.optimizer.zero_grad()
+                for loss in aux_losses.keys():
+                    batchloss += aux_losses[loss]
+                if 'kl_loss' in aux_losses.keys():
+                    self.model.update_KL_weight()
                 batchloss.backward()
                 self.optimizer.step()
 
@@ -316,11 +322,16 @@ class Base(object):
             batch_time.update(time.time() - end)
             end = time.time()
 
-        print(f'Train: [{self.nepoch}]x[{len(tr_loader)}/{len(tr_loader)}]\t'
-              f'Time {batch_time.sum:.1f}\t'
-              f'Loss {metrics["loss"].avg:.2f}\t'
-              f'Prec@1 {metrics["top1"].avg:.2f}\t'
-              f'Prec@2 {metrics["top2"].avg:.2f}')
+        to_print = f'Train: [{self.nepoch}]x[{len(tr_loader)}/{len(tr_loader)}]\t'\
+              f'Time {batch_time.sum:.1f}\t'\
+              f'Loss {metrics["loss"].avg:.2f}\t'\
+              f'Prec@1 {metrics["top1"].avg:.2f}\t'\
+              f'Prec@2 {metrics["top2"].avg:.2f}\t'
+
+        for loss in aux_losses.keys():
+            to_print += f'{str(loss)}: {metrics[loss].avg:.2f}\t'
+
+        print(to_print)
 
         return metrics, targets, predictions
 
@@ -329,6 +340,7 @@ class Base(object):
                                                          np.ndarray]:
         batch_time = utils.AverageMeter()
         metrics: dict = None
+        aux_losses: dict = None
         self.model.eval()
 
         end = time.time()
@@ -340,40 +352,62 @@ class Base(object):
                     data, target = data.cuda(), target.cuda()
 
                 # compute output
-                output, _, metrics = self.predict_batch_(data, target, metrics)
+                output, _, metrics, aux_losses = self.predict_batch_(data, target, metrics)
 
-                predictions = np.append(predictions, output['y_pred'])
+                predictions = np.append(predictions, output['y_pred'].data.cpu().numpy())
                 targets = np.append(targets, target.data.cpu().numpy())
 
                 # measure elapsed time
                 batch_time.update(time.time() - end)
                 end = time.time()
 
-        print(f'Val: [{self.nepoch}]x[{len(val_loader)}/{len(val_loader)}]\t'
-              f'Time {batch_time.sum:.1f}\t'
-              f'Loss {metrics["loss"].avg:.2f}\t'
-              f'Prec@1 {metrics["top1"].avg:.2f}\t'
-              f'Prec@2 {metrics["top2"].avg:.2f}')
+        to_print = f'Val: [{self.nepoch}]x[{len(val_loader)}/{len(val_loader)}]\t'\
+              f'Time {batch_time.sum:.1f}\t'\
+              f'Loss {metrics["loss"].avg:.2f}\t'\
+              f'Prec@1 {metrics["top1"].avg:.2f}\t'\
+              f'Prec@2 {metrics["top2"].avg:.2f}\t'
+
+        for loss in aux_losses.keys():
+            to_print += f'{str(loss)}: {metrics[loss].avg:.2f}\t'
+
+        print(to_print)
 
         return metrics, targets, predictions
+
 
     def predict_batch_(self,
                        data,
                        target,
-                       metrics: dict = None) -> Tuple[Dict, torch.Tensor, Dict]:
+                       metrics: dict = None) -> Tuple[Dict, torch.Tensor, Dict, Dict]:
         batchout = self.model(data)
+
+        # If the predictions are a list, and the targets are not, only take the last prediction
+        if len(target.shape)>1:
+            batchout['logits'] = batchout['logits'].view(-1, batchout['logits'].shape[2])
+            target = target.view(-1)
+        elif len(batchout['logits'].shape) == 3:
+            batchout['logits'] = batchout['logits'][:, -1,:]
+
         batchloss = self.criterion(batchout['logits'], target)
 
         if metrics is None:
             metrics: dict = {'loss': utils.AverageMeter(), 'top1':
                 utils.AverageMeter(),'top2': utils.AverageMeter()}
+            if 'rec_loss' in batchout.keys():
+                metrics['rec_loss'] = utils.AverageMeter()
+            if 'kl_loss' in batchout.keys():
+                metrics['kl_loss'] = utils.AverageMeter()
 
-        # for granger loss ignore aux predictors after loss comp
-        #if isinstance(self.criterion, GrangerLoss):
-        #    for k, v in batchloss.items():
-        #        metrics[k].update(v.item(), data.size(0))
-        #else:
+        aux_loss = {}
         metrics['loss'].update(batchloss.item(), data.size(0))
+        if 'rec_loss' in batchout.keys():
+            aux_loss_rec = batchout['rec_loss']
+            aux_loss['rec_loss'] = aux_loss_rec
+            metrics['rec_loss'].update(aux_loss_rec.item(), data.size(0))
+        if 'kl_loss' in batchout.keys():
+            aux_loss_kl = batchout['kl_loss']
+            aux_loss['kl_loss'] = aux_loss_kl
+            metrics['kl_loss'].update(aux_loss_kl.item(), data.size(0))
 
         # measure accuracy
         (prec1, prec2), y_pred = self.accuracy_(
@@ -382,7 +416,7 @@ class Base(object):
         metrics['top1'].update(prec1, data.size(0))
         metrics['top2'].update(prec2, data.size(0))
 
-        return batchout, batchloss, metrics
+        return batchout, batchloss, metrics, aux_loss
 
     @staticmethod
     def accuracy_(output, target, topk=(1,)) -> Tuple[

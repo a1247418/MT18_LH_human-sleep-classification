@@ -29,13 +29,14 @@ def cfg():
     # default dataset settings
     ds = {
         'channels': None,
-        'data_dir': os.path.join('../../../physionet-challenge-train'),
-        'train_csv': None,
-        'val_csv': None,
+        'data_dir': os.path.join('../data/sleepedf'),
+        'train_csv': os.path.join('../cfg/sleepedf/cv_train.csv'),
+        'val_csv': os.path.join('../cfg/sleepedf/cv_val.csv'),
         'batch_size_train': 32,
         'batch_size_val': 128,
-        'loader': 'Physionet18',
+        'loader': 'Sleepedf', #'Physionet18',
         'nbrs': 8,
+        'osnbrs': False, # one-sided neighbours: only consider neighbours to the left
         'fold': None,  # only specify for CV
         'oversample': False,
         'transforms': None,
@@ -1952,6 +1953,213 @@ def sleepedf_2D_BP30():
         ]
     }
 
+
+############## NEW!
+@ex.named_config
+def DSSM_caro():
+    arch = 'DSSM'
+
+    ms = {
+        'epochs': 200,
+        'hidden_size': 32,
+        'optim': 'adam,lr=0.001',
+        "theta_size": 50,
+        'use_theta': False,
+        'normalize_context': False,
+        'context': True,
+        'train_emb': True,
+        'weighted_loss': True,
+    }
+
+@ex.named_config
+def AttentionNet_RS160_caro():
+    arch = 'AttentionNet'
+
+    ms = {
+        'epochs': 100,
+        'dropout': .2,
+        'optim': 'adam,lr=0.00001',
+        'attention': True,
+        'normalize_context': False,
+        'context': True,
+        'expert_models':
+            [os.path.join('..', 'models', '79'),
+             os.path.join('..', 'models', '80'),
+             os.path.join('..', 'models', '81'),
+             os.path.join('..', 'models', '82')],
+        'train_emb': True,
+        'weighted_loss': True
+    }
+
+
+@ex.named_config
+def AttentionNet_RS160_edf():
+    arch = 'AttentionNet'
+
+    ms = {
+        'epochs': 100,
+        'dropout': .2,
+        'optim': 'adam,lr=0.00001',
+        'attention': True,
+        'normalize_context': False,
+        'context': True,
+        'expert_models':
+            [os.path.join('..', 'models', 'debug_edf_1'),
+             os.path.join('..', 'models', 'debug_edf_2'),
+             os.path.join('..', 'models', 'debug_edf_3')],
+        'train_emb': True,
+        'weighted_loss': True
+    }
+
+
+@ex.named_config
+def sleepedf_all_2D():
+    ds = {
+        'loader': 'Sleepedf',
+        'channels': [
+            ('EEG-Pz-Oz', [
+                'BandPass(fs=100, lowpass=45, highpass=.5)',
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'LogTransform()',
+                'TwoDFreqSubjScaler()'
+            ]),
+            ('EOG-horizontal', [
+                'BandPass(fs=100, lowpass=45, highpass=.5)',
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'LogTransform()',
+                'TwoDFreqSubjScaler()'
+            ]),
+            ('EEG-Fpz-Cz', [
+                'BandPass(fs=100, lowpass=45, highpass=.5)',
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'LogTransform()',
+                'TwoDFreqSubjScaler()'
+            ])
+        ]
+    }
+
+
+@ex.named_config
+def caro_all_2D():
+    ds = {
+        'loader': 'Carofile',
+        'channels': [
+            ('EEG_raw', [
+                'BandPass(fs=100, lowpass=1, highpass=.1)',
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'LogTransform()',
+                'TwoDFreqSubjScaler()'
+            ]),
+            ('EEG', [
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'LogTransform()',
+                'TwoDFreqSubjScaler()'
+            ]),
+            ('EOGL', [
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'LogTransform()',
+                'TwoDFreqSubjScaler()'
+            ]),
+            ('EOGR', [
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'LogTransform()',
+                'TwoDFreqSubjScaler()'
+            ]),
+            ('EMG', [
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'LogTransform()',
+                'TwoDFreqSubjScaler()'
+            ])
+        ]
+    }
+
+@ex.named_config
+def caro_all_2D_onesided():
+    ds = {
+        'loader': 'Carofile',
+        'nbrs': 20,
+        'osnbrs': True,
+        'channels': [
+            ('EEG', [
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'LogTransform()',
+                'TwoDFreqSubjScaler()'
+            ]),
+            ('EOGL', [
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'LogTransform()',
+                'TwoDFreqSubjScaler()'
+            ]),
+            ('EOGR', [
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'LogTransform()',
+                'TwoDFreqSubjScaler()'
+            ]),
+            ('EMG', [
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'LogTransform()',
+                'TwoDFreqSubjScaler()'
+            ])
+        ]
+    }
+
+@ex.named_config
+def caro_EMG_2D():
+    ds = {
+        'loader': 'Carofile',
+        'channels': [
+            ('EMG', [
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'LogTransform()',
+                'TwoDFreqSubjScaler()'
+            ])
+        ]
+    }
+
+
+
+@ex.named_config
+def caro_EOGL_2D():
+    ds = {
+        'loader': 'Carofile',
+        'channels': [
+            ('EOGL', [
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'LogTransform()',
+                'TwoDFreqSubjScaler()'
+            ])
+        ]
+    }
+
+
+@ex.named_config
+def caro_EOGR_2D():
+    ds = {
+        'loader': 'Carofile',
+        'channels': [
+            ('EOGR', [
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'LogTransform()',
+                'TwoDFreqSubjScaler()'
+            ])
+        ]
+    }
+
+
+@ex.named_config
+def caro_EEG_2D():
+    ds = {
+        'loader': 'Carofile',
+        'channels': [
+            ('EEG', [
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'LogTransform()',
+                'TwoDFreqSubjScaler()'
+            ])
+        ]
+    }
+
+
 @ex.named_config
 def sleepedf_2D_BAK():
     ds = {
@@ -1964,6 +2172,7 @@ def sleepedf_2D_BAK():
             ])
         ]
     }
+
 
 
 @ex.named_config

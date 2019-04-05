@@ -10,22 +10,26 @@ from sleeplearning.lib.loaders.baseloader import BaseLoader
 class Carofile(BaseLoader):
     def __init__(self, path: str, epoch_length: int = 20, verbose: bool = False):
         super().__init__(path, epoch_length)
-        psg_dict = {'EEG': 'EEG_data_filt', 'EOGR': 'EOGR_data_filt',
-                    'EOGL': 'EOGL_data_filt', 'EMG': 'EMG_data_filt'}
+        psg_dict = {'EEG_raw': 'FpzA2', 'EEG': 'FpzA2_filt', 'EOGR': 'EOGR_filt',
+                    'EOGL': 'EOGL_filt', 'EMG': 'EMG_filt'}
         self.label = self.path.split('/')[-1][5:-12]
         self.psgs = {}
         mat = scipy.io.loadmat(self.path)
-        self.artefact_data = {'artefacts': mat['artfact_per4s'][0],
-                              'epoch_size': 4}
         self.sampling_rate_ = int(mat['sampling_rate'][0][0])
 
-        if 'sleepStage_score' in mat:
-            epoch_scoring_length = int(mat['epoch_size_scoring_sec'][0][0])
-            if epoch_scoring_length % self.epoch_length != 0:
-                raise ValueError(
-                    "epoch length ({0}s) must divide scoring length ({1}s)".format(
-                        str(self.epoch_length), str(epoch_scoring_length)))
-            self.hypnogram = mat['sleepStage_score'][0]
+        for expert in range(1,5):
+            # TODO use labelling more intelligently
+            if f'sleepStage_score_E{expert}' in mat:
+                self.artefact_data = {'artefacts': mat[f'artfact_per4s_E{expert}'][0],
+                                      'epoch_size': 4}
+
+                epoch_scoring_length = int(mat['epoch_size_scoring_sec'][0][0])
+                if epoch_scoring_length % self.epoch_length != 0:
+                    raise ValueError(
+                        "epoch length ({0}s) must divide scoring length ({1}s)".format(
+                            str(self.epoch_length), str(epoch_scoring_length)))
+                self.hypnogram = mat[f'sleepStage_score_E{expert}'][0]
+                break
 
         else:
             epoch_scoring_length = self.epoch_length
