@@ -15,7 +15,8 @@ import glob
 def main(args):
     subjects = pd.read_csv(args.subject_csv, header=None)[
         0].dropna().tolist()
-    data_dir = '/cluster/scratch/hlinus/physionet-challenge-train/'
+    #data_dir = '/cluster/scratch/llorenz/data/caro/'
+    data_dir = '/cluster/home/llorenz/sleep/MT18_LH_human-sleep-classification/data/sleepedf/'
 
     if os.path.isdir(args.model):
         models = glob.glob(args.model + '/*')
@@ -53,7 +54,7 @@ def main(args):
                 savedict[k] = v
             np.savez(os.path.join(output_dir, subject), **savedict)
             channel_accuracies = np.append(channel_accuracies, accuracy)
-            print(f"\n{subject}: {accuracy}\n")
+            print("\n{}: {}\n".format(subject, accuracy))
         print("mean acc: ", np.mean(channel_accuracies))
 
 

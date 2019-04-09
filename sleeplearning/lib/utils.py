@@ -57,6 +57,8 @@ class SleepLearningDataset(object):
         class_distribution = np.zeros(
             len(BaseLoader.sleep_stages_labels.keys()), dtype=int)
 
+        print(subject_csv)
+        print(subject_files)
         for subject_file in subject_files:
             start = time.time()
             subject = loader(os.path.join(data_dir, subject_file))
@@ -116,10 +118,14 @@ class SleepLearningDataset(object):
                     nbr_offsets = [off for off in range(-pad_left, pad_right+1)]
                     label_int = []
                     for off in nbr_offsets:
-                        singular_label = subject.hypnogram[e+off]
-                        singular_label = subject.hypnogram[e+off-1] if singular_label == 6 else singular_label
-                        class_distribution[singular_label] += 1
-                        label_int.append(class_remapping[singular_label])
+                        # Append wake labels for padding
+                        if e+off < 0 or e+off >= len(subject.hypnogram):
+                            label_int.append(0)
+                        else:
+                            singular_label = subject.hypnogram[e+off]
+                            singular_label = subject.hypnogram[e+off-1] if singular_label == 6 else singular_label
+                            class_distribution[singular_label] += 1
+                            label_int.append(class_remapping[singular_label])
                 else:
                     class_distribution[label_int] += 1
                     label_int = class_remapping[label_int]
@@ -300,6 +306,8 @@ def get_model(arch, ms, class_dist=None, cuda=True, verbose=False):
         weights = np.reciprocal(normed_counts).astype(np.float32)
     else:
         weights = np.ones(ms['nclasses'])
+
+    print(weights, class_dist)
 
     weights = torch.from_numpy(weights).type(torch.FloatTensor)
     if 'loss' not in ms.keys() or ms['loss'] == 'xentropy':

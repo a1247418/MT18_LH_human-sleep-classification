@@ -6,7 +6,8 @@ import random
 
 import pdb
 
-def split(data_dir, csv_dir, file_id_re, subj_id_re, n_folds):
+
+def split(data_dir, csv_dir, file_id_re, subj_id_re, n_folds, n_test_files=2):
     # Gather how many subjects and nights there are
     files = [f for f in os.listdir(data_dir) if
              os.path.isfile(os.path.join(data_dir, f))]
@@ -27,6 +28,7 @@ def split(data_dir, csv_dir, file_id_re, subj_id_re, n_folds):
             n_nights += 1
     subject_ids = list(set(subject_ids))
     n_subjects = len(subject_ids)
+    print(f"Found {n_subjects} subjects.")
 
     # Generate a random permutation of fold assignments
     fold_assignments = []
@@ -38,39 +40,50 @@ def split(data_dir, csv_dir, file_id_re, subj_id_re, n_folds):
 
     # Save to csv
     with open(csv_dir + 'cv_train.csv', 'w+', newline="") as tr_file,\
-         open(csv_dir + 'cv_val.csv', 'w+', newline="") as val_file:
+         open(csv_dir + 'cv_val.csv', 'w+', newline="") as val_file,\
+         open(csv_dir + 'cv_test.csv', 'w+', newline="") as te_file:
         tr_writer = csv.writer(tr_file)
         val_writer = csv.writer(val_file)
+        te_writer = csv.writer(te_file)
+
         tr_names_all = []
-        val_names_all = []
+        te_names_all = []
         for fold in range(n_folds):
             # Randomize order in which the subjects are listed
             subject_order = [x for x in subject_ids]
             random.shuffle(subject_order)
             tr_names = []
-            val_names = []
+            te_names = []
             for subj in subject_order:
                 # Validation samples
                 if subj2fold[subj] == fold:
-                    val_names += subj2file_name[subj]
+                    te_names += subj2file_name[subj]
                 # Train samples
                 else:
                     tr_names += subj2file_name[subj]
             tr_names_all.append(tr_names)
-            val_names_all.append(val_names)
+            te_names_all.append(te_names)
+
+        # make val_set
+        val_names_all = [tr[-n_test_files:] for tr in tr_names_all]
+        tr_names_all = [tr[:-n_test_files] for tr in tr_names_all]
 
         # Pad rows to equal length with commas, s.t. pandas can read them
         max_tr_len = max([len(n) for n in tr_names_all])
+        max_te_len = max([len(n) for n in te_names_all])
         max_val_len = max([len(n) for n in val_names_all])
         for fold in range(n_folds):
             tr_names_all[fold] += [""] * (max_tr_len - len(tr_names_all[fold]))
             val_names_all[fold] += [""] * (max_val_len - len(val_names_all[fold]))
+            te_names_all[fold] += [""] * (max_te_len - len(te_names_all[fold]))
 
         # Write each fold as a column
         for col in range(max_tr_len):
             tr_writer.writerow([f[col] for f in tr_names_all])
         for col in range(max_val_len):
             val_writer.writerow([f[col] for f in val_names_all])
+        for col in range(max_te_len):
+            te_writer.writerow([f[col] for f in te_names_all])
 
 
 if __name__ == "__main__":
@@ -87,6 +100,11 @@ if __name__ == "__main__":
     elif args.dataset == "caro":
         data_dir = "/cluster/scratch/llorenz/data/caro/"
         csv_dir = "../cfg/caro/"
+        name_re = re.compile(r'WESA_S\d{3}_N\d+S_MLready')
+        subj_re = re.compile(r'\d{3}')
+    elif args.dataset == "caro_new":
+        data_dir = "/cluster/scratch/llorenz/data/caro_new/"
+        csv_dir = "../cfg/caro_new/"
         name_re = re.compile(r'WESA_S\d{3}_N\d+S_MLready')
         subj_re = re.compile(r'\d{3}')
     split(data_dir, csv_dir, name_re, subj_re, args.k)

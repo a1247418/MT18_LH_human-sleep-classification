@@ -38,6 +38,7 @@ def cfg():
         'nbrs': 8,
         'osnbrs': False, # one-sided neighbours: only consider neighbours to the left
         'fold': None,  # only specify for CV
+        'nfolds': None,
         'oversample': False,
         'transforms': None,
         'nclasses': 5,
@@ -1962,13 +1963,14 @@ def DSSM_caro():
     ms = {
         'epochs': 200,
         'hidden_size': 32,
-        'optim': 'adam,lr=0.001',
+        'optim': 'adam,lr=0.5', # large bc of gradient clipping
         "theta_size": 50,
         'use_theta': False,
         'normalize_context': False,
         'context': True,
         'train_emb': True,
         'weighted_loss': True,
+        'label_nbrs': True,
     }
 
 @ex.named_config
@@ -1983,10 +1985,10 @@ def AttentionNet_RS160_caro():
         'normalize_context': False,
         'context': True,
         'expert_models':
-            [os.path.join('..', 'models', '79'),
-             os.path.join('..', 'models', '80'),
-             os.path.join('..', 'models', '81'),
-             os.path.join('..', 'models', '82')],
+            [os.path.join('..', 'logs', 'cv_ready', 'caro_new', 'EOGR'),
+             os.path.join('..', 'logs', 'cv_ready', 'caro_new', 'EMG'),
+             os.path.join('..', 'logs', 'cv_ready', 'caro_new', 'EOGL'),
+             os.path.join('..', 'logs', 'cv_ready', 'caro_new', 'EEG')],
         'train_emb': True,
         'weighted_loss': True
     }
@@ -2044,8 +2046,38 @@ def caro_all_2D():
     ds = {
         'loader': 'Carofile',
         'channels': [
-            ('EEG_raw', [
-                'BandPass(fs=100, lowpass=1, highpass=.1)',
+            ('EEG', [
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'LogTransform()',
+                'TwoDFreqSubjScaler()'
+            ]),
+            ('EOGL', [
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'LogTransform()',
+                'TwoDFreqSubjScaler()'
+            ]),
+            ('EOGR', [
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'LogTransform()',
+                'TwoDFreqSubjScaler()'
+            ]),
+            ('EMG', [
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'LogTransform()',
+                'TwoDFreqSubjScaler()'
+            ])
+        ]
+    }
+
+
+@ex.named_config
+def caro_all_2D_no_sweat():
+    ds = {
+        'loader': 'Carofile',
+        'channels': [
+            #  To filter out sweating artefacts
+            ('EEG', [
+                'BandPass(fs=100, lowpass=100, highpass=1)',
                 'Spectrogram(fs=100, window=150, stride=100)',
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'
@@ -2072,6 +2104,7 @@ def caro_all_2D():
             ])
         ]
     }
+
 
 @ex.named_config
 def caro_all_2D_onesided():
@@ -2152,6 +2185,21 @@ def caro_EEG_2D():
         'loader': 'Carofile',
         'channels': [
             ('EEG', [
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'LogTransform()',
+                'TwoDFreqSubjScaler()'
+            ])
+        ]
+    }
+
+
+@ex.named_config
+def caro_EEG_2D_no_sweat():
+    ds = {
+        'loader': 'Carofile',
+        'channels': [
+            ('EEG', [
+                'BandPass(fs=100, lowpass=100, highpass=1)',
                 'Spectrogram(fs=100, window=150, stride=100)',
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'

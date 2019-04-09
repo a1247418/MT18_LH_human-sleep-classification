@@ -40,9 +40,9 @@ def cv(ds, arch, ms, cuda, log_dir, seed, _run):
     predictions = np.array([], dtype=int)
     clf = Base(logger=logger, cuda=cuda, verbose=True)
 
-    for i in range(20):
+    for i in range(ds['nfolds']):
         fold_accs = np.array([])
-        checkpoint_path = os.path.join(log_dir, f'fold{i}',
+        checkpoint_path = os.path.join(log_dir, 'fold{}'.format(i),
                                        'checkpoint.pth.tar')
         clf.restore(checkpoint_dir=checkpoint_path)
         # reset fold id since we evaluate each subject independently
@@ -54,18 +54,18 @@ def cv(ds, arch, ms, cuda, log_dir, seed, _run):
             pred = np.argmax(probs, 1)
             savedict = dict(subject=subject, acc=acc, probs=probs, y_pred=pred,
                             y_true=true)
-            print(f"subject {subject}: {acc}")
+            print("subject {}: {}".format(subject, acc))
             fold_accs = np.append(fold_accs, acc)
             np.savez(os.path.join(output_dir, subject), **savedict)
             targets = np.append(targets, true)
             predictions = np.append(predictions, pred)
-        print(f"fold {i}: {np.mean(fold_accs)}")
+        print("fold {}: {}".format(i, np.mean(fold_accs)))
     cm = confusion_matrix(targets, predictions)
     overall_acc = accuracy_score(targets, predictions)*100
     print("\n CONFUSION MATRIX ")
     print(cm)
     print("\n OVERALL ACCURACY ")
-    print(f"{overall_acc:.2f}%")
+    print("{0:.2f}%".format(overall_acc))
 
     return overall_acc
 

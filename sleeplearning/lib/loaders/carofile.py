@@ -17,10 +17,10 @@ class Carofile(BaseLoader):
         mat = scipy.io.loadmat(self.path)
         self.sampling_rate_ = int(mat['sampling_rate'][0][0])
 
-        for expert in range(1,5):
+        for expert in ["E1","E2","E3","E4","E5","CL"]:
             # TODO use labelling more intelligently
-            if f'sleepStage_score_E{expert}' in mat:
-                self.artefact_data = {'artefacts': mat[f'artfact_per4s_E{expert}'][0],
+            if f'sleepStage_score_{expert}' in mat:
+                self.artefact_data = {'artefacts': mat[f'artfact_per4s_{expert}'][0],
                                       'epoch_size': 4}
 
                 epoch_scoring_length = int(mat['epoch_size_scoring_sec'][0][0])
@@ -28,8 +28,14 @@ class Carofile(BaseLoader):
                     raise ValueError(
                         "epoch length ({0}s) must divide scoring length ({1}s)".format(
                             str(self.epoch_length), str(epoch_scoring_length)))
-                self.hypnogram = mat[f'sleepStage_score_E{expert}'][0]
+                self.hypnogram = mat[f'sleepStage_score_{expert}'][0]
                 break
+
+        if self.hypnogram is None:
+            print(mat.keys())
+        if 4 in self.hypnogram:
+            print(path)
+            raise Exception()
 
         else:
             epoch_scoring_length = self.epoch_length

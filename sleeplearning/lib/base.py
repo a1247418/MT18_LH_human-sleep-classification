@@ -46,7 +46,7 @@ class Base(object):
             self.kwargs = {}
 
     def fit(self, arch, ms, data_dir, loader, train_csv, val_csv, channels,
-            nclasses, fold,
+            nclasses, fold, nfolds,
             nbrs, osnbrs, batch_size_train, batch_size_val, oversample, transforms,
             early_stop=False):
 
@@ -58,6 +58,7 @@ class Base(object):
         else:
             transforms = None
         print("\nTRAINING SET: ", end="")
+        label_nbrs = False if 'label_nbrs' not in ms.keys() else ms['label_nbrs']
         train_ds = utils.SleepLearningDataset(data_dir, train_csv, fold,
                                               nclasses,
                                               FeatureExtractor(
@@ -65,7 +66,8 @@ class Base(object):
                                               nbrs, osnbrs,
                                               ldr, discard_arts=True,
                                               transform=transforms,
-                                              verbose=self.verbose)
+                                              verbose=self.verbose,
+                                              label_nbrs=label_nbrs)
 
         print("\nVAL SET: ", end="")
         val_ds = utils.SleepLearningDataset(data_dir, val_csv, fold,
@@ -74,7 +76,7 @@ class Base(object):
                                                 channels).get_features(),
                                             nbrs, osnbrs,
                                             ldr,
-                                            verbose=self.verbose, label_nbrs=False)
+                                            verbose=self.verbose, label_nbrs=label_nbrs)
 
         print("\nTRAIN LOADER:")
         train_loader = utils.get_sampler(train_ds, batch_size_train,
@@ -96,7 +98,7 @@ class Base(object):
             'loader': loader,
             'channels': channels,
             'nbrs': nbrs,
-            'one_sided_nbrs': osnbrs,
+            'osnbrs': osnbrs,
             'nclasses': nclasses,
             'train_dist': list(train_ds.dataset_info['class_distribution']
                                .values())
@@ -315,6 +317,7 @@ class Base(object):
                     batchloss += aux_losses[loss]
                 if 'kl_loss' in aux_losses.keys():
                     self.model.update_KL_weight()
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 25)
                 batchloss.backward()
                 self.optimizer.step()
 
@@ -445,9 +448,12 @@ class Base(object):
                                              FeatureExtractor(
                                                  self.ds['channels'])
                                              .get_features(),
-                                             self.ds['nbrs'], ldr,
+                                             self.ds['nbrs'],
+                                             self.ds['osnbrs'],ldr,
                                              transform=transform,
-                                             verbose=self.verbose)
+                                             verbose=self.verbose,
+                                             label_nbrs=False)
+
 
         data_loader = utils.get_sampler(dataset, batch_size, False, shuffle,
                                         False, self.kwargs,
