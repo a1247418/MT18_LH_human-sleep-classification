@@ -1963,7 +1963,7 @@ def DSSM_caro():
     ms = {
         'epochs': 200,
         'hidden_size': 32,
-        'optim': 'adam,lr=0.5', # large bc of gradient clipping
+        'optim': 'adam,lr=0.001', # large bc of gradient clipping
         "theta_size": 50,
         'use_theta': False,
         'normalize_context': False,
