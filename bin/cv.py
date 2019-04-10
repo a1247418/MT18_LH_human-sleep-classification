@@ -40,6 +40,7 @@ def cv(ds, arch, ms, cuda, log_dir, seed, _run):
     predictions = np.array([], dtype=int)
     clf = Base(logger=logger, cuda=cuda, verbose=True)
 
+    print(ds['nfolds'])
     for i in range(ds['nfolds']):
         fold_accs = np.array([])
         checkpoint_path = os.path.join(log_dir, 'fold{}'.format(i),
@@ -48,6 +49,7 @@ def cv(ds, arch, ms, cuda, log_dir, seed, _run):
         # reset fold id since we evaluate each subject independently
         clf.ds['fold'] = 0
         subjects = pd.read_csv(ds['val_csv'], header=None)[i].dropna().tolist()
+        print(subjects)
         for subject in subjects:
             acc, probs, true = clf.score(os.path.join(ds['data_dir'], subject),
                               probs=True)
