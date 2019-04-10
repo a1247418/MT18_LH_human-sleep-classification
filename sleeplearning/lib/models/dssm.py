@@ -58,30 +58,35 @@ class Conv2dWithBn(nn.Module):
                     xavier_normal(mi.bias.data)
 
     def forward(self, x):
+        #print(x.shape, "-->")
         x = self.conv1(x)
         x = self.relu(x)
         x = self.conv1_bn(x)
+        #print(x.shape)
         return x
 
 
 class ConvBlock(nn.Module):
-    def __init__(self):
+    def __init__(self, input_shape, filter_dim):
         super(ConvBlock, self).__init__()
+        n_signals = int(input_shape[0])
         self.block = nn.Sequential(
                 nn.MaxPool2d((2, 2), stride=(2, 2)),
-                Conv2dWithBn(1, filter_size=(3, 3), n_filters=64, stride=1),
+                Conv2dWithBn(n_signals, filter_size=(3, 3), n_filters=filter_dim, stride=1),
                 nn.MaxPool2d((2, 2), stride=(2, 2)),
 
-                Conv2dWithBn(64, filter_size=(3, 3), n_filters=64, stride=1),
+                Conv2dWithBn(filter_dim, filter_size=(3, 3), n_filters=filter_dim, stride=1),
                 nn.MaxPool2d((3, 3), stride=(3, 3)),
 
-                Conv2dWithBn(64, filter_size=(3, 3), n_filters=96, stride=1),
-                nn.MaxPool2d((3, 3), stride=(3, 3)),
+                Conv2dWithBn(filter_dim, filter_size=(3, 3), n_filters=filter_dim, stride=1),
+                nn.MaxPool2d((2, 4), stride=(2, 4)),
             )
+
+        outdim = _get_output_dim(self.block, input_shape)
 
     def forward(self, x):
         x = self.block(x)
-        return x.view(x.size(0), -1)
+        return x#.view(x.size(0), -1)
 
 
 class DSSM(nn.Module):
@@ -93,10 +98,12 @@ class DSSM(nn.Module):
         self.input_dim = ms['input_dim']
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.hidden_size = ms["hidden_size"]
+        self.filter_size = ms["filter_size"]
         self.out_size = ms['nclasses']
         self.theta_size = ms["theta_size"]
         self.use_theta = ms["use_theta"]
         self.n_samples = ms["nbrs"] + 1
+        self.dropout = ms["dropout"]
 
         self.n_signals = int(self.input_dim[0])
         self.observation_dim = self.input_dim[1]
@@ -109,6 +116,7 @@ class DSSM(nn.Module):
         self.reduced_observ_dim = self.hidden_size#math.floor((self.observation_dim - (kernel_w-1)-1)/stride_w + 1)
 
         # convolver
+        """
         self.convolver_phase_1 = nn.Sequential(nn.Conv2d(self.n_signals, self.hidden_size,
                                                          kernel_size=[kernel_h, kernel_w],
                                                          stride=[stride_h, stride_w]),
@@ -119,15 +127,21 @@ class DSSM(nn.Module):
                                                          stride=[stride_h, stride_w]),
                                                nn.BatchNorm2d(self.hidden_size),
                                                nn.ReLU())
+        """
+        self.convolver_phase_1 = nn.Sequential(ConvBlock(self.input_dim, self.filter_size), nn.Dropout(p=self.dropout))
+        self.convolver_phase_2 = nn.Sequential(ConvBlock(self.input_dim, self.filter_size), nn.Dropout(p=self.dropout))
+
+        out_size = _get_output_dim(self.convolver_phase_1, self.input_dim)
+        #print(out_size)
 
         # embedding module (for calculating beta)
-        self.uncertainty_inference_1 = nn.Linear(self.reduced_observ_dim+self.hidden_size, self.hidden_size)
+        self.uncertainty_inference_1 = nn.Linear(self.filter_size+self.hidden_size, self.hidden_size)
         self.uncertainty_inference_2_mean = nn.Linear(self.hidden_size, self.hidden_size)
         self.uncertainty_inference_2_logvar = nn.Linear(self.hidden_size, self.hidden_size)
 
         # system identification module for functions phi_theta and phi_s
         self.num_layers = 2
-        self.sequence_encoder = nn.LSTM(input_size=self.reduced_observ_dim, hidden_size=self.hidden_size,
+        self.sequence_encoder = nn.LSTM(input_size=self.filter_size, hidden_size=self.hidden_size,
                                         num_layers=self.num_layers, bidirectional=True, batch_first=True)
         self.theta_encoder = nn.Linear(self.hidden_size, self.theta_size)
         self.state_encoder = nn.Linear(self.hidden_size, 2*self.hidden_size)
@@ -144,14 +158,19 @@ class DSSM(nn.Module):
 
         # emission module for function g
         self.state_emission_1 = nn.Linear(self.hidden_size, self.hidden_size)
-        self.state_emission_2 = nn.Linear(self.hidden_size, self.reduced_observ_dim)
+        self.state_emission_2 = nn.Linear(self.hidden_size, self.filter_size)
 
         # deconvolver
         self.deconvolver = nn.Sequential(nn.ReLU(),
-                                         nn.ConvTranspose2d(self.hidden_size,
+                                         nn.ConvTranspose2d(self.filter_size,
+                                                            self.filter_size,
+                                                            kernel_size=[kernel_h//2, kernel_w//2],
+                                                            stride=[stride_w//2, stride_h//2]),
+                                         nn.ReLU(),
+                                         nn.ConvTranspose2d(self.filter_size,
                                                             self.n_signals,
-                                                            kernel_size=[kernel_h, kernel_w],
-                                                            stride=[stride_w, stride_h]))
+                                                            kernel_size=[2, 2],
+                                                            stride=[2, 2]))
 
         # labler
         linear_stack = [self.hidden_size, self.hidden_size]
@@ -171,7 +190,7 @@ class DSSM(nn.Module):
             weight.data.normal_(0, stdv)
 
     def update_KL_weight(self):
-        self.kl_weight = min(1, self.kl_weight + 0.000001)
+        self.kl_weight = min(1, self.kl_weight + 0.0001)
 
     def PTKLinear(self, X, Y):
         return X.mm(Y.t())
@@ -285,6 +304,7 @@ class DSSM(nn.Module):
             # print("Pred shape: ", pred.shape)
             rec_loss += F.mse_loss(pred.contiguous().view(-1), obs.contiguous().view(-1))
             kl_loss += self.kl_loss(beta_mean, beta_logvar)
+            #print(kl_loss)
 
         if forecast_seq_len > 0:
             with torch.no_grad():
