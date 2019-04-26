@@ -25,6 +25,7 @@ def cfg():
     save_model = False
     save_best_only = False
     early_stop = True
+    unsupervised = False
 
     # default dataset settings
     ds = {
@@ -1962,8 +1963,11 @@ def DSSM_caro():
 
     ms = {
         'epochs': 200,
-        'hidden_size': 32,
-        'optim': 'adam,lr=0.001', # large bc of gradient clipping
+        'hidden_size': 8,
+        'filter_size': 16,
+        'sep_channels': False,
+        'dropout': .2,  # for conv nets
+        'optim': 'adam,lr=0.01',#"adagrad,lr=0.1,lr_decay=0.05", #025',  # large bc of gradient clipping
         "theta_size": 50,
         'use_theta': False,
         'normalize_context': False,
@@ -2077,7 +2081,7 @@ def caro_all_2D_no_sweat():
         'channels': [
             #  To filter out sweating artefacts
             ('EEG', [
-                'BandPass(fs=100, lowpass=100, highpass=1)',
+                'BandPass(fs=100, lowpass=45, highpass=1)',
                 'Spectrogram(fs=100, window=150, stride=100)',
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'
@@ -2113,6 +2117,44 @@ def caro_all_2D_onesided():
         'nbrs': 20,
         'osnbrs': True,
         'channels': [
+            ('EEG', [
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'LogTransform()',
+                'TwoDFreqSubjScaler()'
+            ]),
+            ('EOGL', [
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'LogTransform()',
+                'TwoDFreqSubjScaler()'
+            ]),
+            ('EOGR', [
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'LogTransform()',
+                'TwoDFreqSubjScaler()'
+            ]),
+            ('EMG', [
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'LogTransform()',
+                'TwoDFreqSubjScaler()'
+            ])
+        ]
+    }
+
+
+@ex.named_config
+def caro_all_2D_onesided_no_sweat():
+    ds = {
+        'loader': 'Carofile',
+        'nbrs': 20,
+        'osnbrs': True,
+        'channels': [
+            #  To filter out sweating artefacts
+            ('EEG', [
+                'BandPass(fs=100, lowpass=45, highpass=1)',
+                'Spectrogram(fs=100, window=150, stride=100)',
+                'LogTransform()',
+                'TwoDFreqSubjScaler()'
+            ]),
             ('EEG', [
                 'Spectrogram(fs=100, window=150, stride=100)',
                 'LogTransform()',

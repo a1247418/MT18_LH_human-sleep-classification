@@ -13,7 +13,7 @@ import json
 
 @ex.main
 def train(ds, arch, ms, cuda, log_dir, seed, save_model, save_best_only,
-          early_stop,_run):
+          early_stop, unsupervized,_run):
     # fix seed
     print("seed: ", seed)
     np.random.seed(seed)
@@ -47,7 +47,7 @@ def train(ds, arch, ms, cuda, log_dir, seed, save_model, save_best_only,
 
     # Fit the model
     clf = Base(logger=logger, cuda=cuda, verbose=True)
-    clf.fit(arch, ms, **ds, early_stop=early_stop)
+    clf.fit(arch, ms, **ds, early_stop=early_stop, unsupervized=unsupervized)
 
     _run.info['modelstr'] = str(clf.model)
 

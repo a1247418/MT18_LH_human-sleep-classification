@@ -88,12 +88,60 @@ class ConvBlock(nn.Module):
         x = self.block(x)
         return x#.view(x.size(0), -1)
 
+class Conv2DTranslation(nn.Module):
+    def __init__(self, from_dims, to_dims, filter_dim_in, filter_dim, filter_dim_out):
+        super(Conv2DTranslation, self).__init__()
+
+        self.conv = nn.Sequential(nn.ReLU())
+
+        stacks = [[],[]]  # will be filled with kernel, stride tuples
+        for i in range(2):
+            dim = from_dims[i]
+            while to_dims[i] >= dim * 4:
+                stacks[i].append((4, 4))
+                dim = dim * 4
+                print(to_dims[i], dim)
+            while to_dims[i] >= dim * 2:
+                stacks[i].append((2, 2))
+                dim *= 2
+                print(to_dims[i], dim)
+            if to_dims[i] != dim:
+                # out = (in-1)*stride + kernel
+                stacks[i].append((to_dims[i]- dim + 1, 1))
+
+        n_layers = max(len(stacks[0]), len(stacks[1]))
+        for i in range(n_layers):
+            if len(stacks[0]) <= i:
+                stacks[0].append((1,1))
+            if len(stacks[1]) <= i:
+                stacks[1].append((1,1))
+            in_size = filter_dim_in if i == 0 else filter_dim
+            out_size = filter_dim_out if i == n_layers - 1 else filter_dim
+            self.conv.add_module(f"ConvT{i}", torch.nn.Sequential(
+                nn.ConvTranspose2d(
+                    in_size,
+                    out_size,
+                    kernel_size=(stacks[0][i][0], stacks[1][i][0]),
+                    stride=(stacks[0][i][1], stacks[1][i][1])),
+                nn.ReLU()
+            ))
+            if i != n_layers - 1:
+                self.conv.add_module(f"ConvTbn{i}", nn.BatchNorm2d(out_size))
+
+        print(stacks[0])
+        print(stacks[1])
+
+    def forward(self, x):
+        x = self.conv(x)
+        return x
+
 
 class DSSM(nn.Module):
     def __init__(self, ms: dict):
         super(DSSM, self).__init__()
 
-        self.kl_weight = 0
+        self.kl_weight = 0.1
+        self.rec_weight = 1
 
         self.input_dim = ms['input_dim']
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -104,6 +152,7 @@ class DSSM(nn.Module):
         self.use_theta = ms["use_theta"]
         self.n_samples = ms["nbrs"] + 1
         self.dropout = ms["dropout"]
+        self.sep_channels = ms["sep_channels"]
 
         self.n_signals = int(self.input_dim[0])
         self.observation_dim = self.input_dim[1]
@@ -113,7 +162,8 @@ class DSSM(nn.Module):
         stride_w = self.subseq_len
         kernel_h = self.observation_dim
         stride_h = self.observation_dim
-        self.reduced_observ_dim = self.hidden_size#math.floor((self.observation_dim - (kernel_w-1)-1)/stride_w + 1)
+        self.reduced_observ_dim = self.filter_size if not self.sep_channels else self.filter_size*self.n_signals
+        # math.floor((self.observation_dim - (kernel_w-1)-1)/stride_w + 1)
 
         # convolver
         """
@@ -128,20 +178,36 @@ class DSSM(nn.Module):
                                                nn.BatchNorm2d(self.hidden_size),
                                                nn.ReLU())
         """
-        self.convolver_phase_1 = nn.Sequential(ConvBlock(self.input_dim, self.filter_size), nn.Dropout(p=self.dropout))
-        self.convolver_phase_2 = nn.Sequential(ConvBlock(self.input_dim, self.filter_size), nn.Dropout(p=self.dropout))
 
-        out_size = _get_output_dim(self.convolver_phase_1, self.input_dim)
-        #print(out_size)
+        if self.sep_channels:
+            self.convolver_phase_1 = []
+            self.convolver_phase_2 = []
+            dim = list(self.input_dim)
+            dim[0] = 1
+            dim = tuple(dim)
+            for s in range(self.n_signals):
+                self.convolver_phase_1.append(nn.Sequential(ConvBlock(dim, self.filter_size), nn.Dropout(p=self.dropout)))
+                self.convolver_phase_2.append(nn.Sequential(ConvBlock(dim, self.filter_size), nn.Dropout(p=self.dropout)))
+                self.__setattr__("conv1_"+str(s), self.convolver_phase_1[-1])
+                self.__setattr__("conv2_"+str(s), self.convolver_phase_2[-1])
+            conv_size = _get_output_dim(self.convolver_phase_1[0], dim)
+        else:
+            self.convolver_phase_1 = nn.Sequential(ConvBlock(self.input_dim, self.filter_size), nn.Dropout(p=self.dropout))
+            self.convolver_phase_2 = nn.Sequential(ConvBlock(self.input_dim, self.filter_size), nn.Dropout(p=self.dropout))
+
+            conv_size = _get_output_dim(self.convolver_phase_1, self.input_dim)
+        print("CONV", conv_size)
+
+        print("Dims", self.observation_dim, self.reduced_observ_dim)
 
         # embedding module (for calculating beta)
-        self.uncertainty_inference_1 = nn.Linear(self.filter_size+self.hidden_size, self.hidden_size)
+        self.uncertainty_inference_1 = nn.Linear(self.reduced_observ_dim+self.hidden_size, self.hidden_size)
         self.uncertainty_inference_2_mean = nn.Linear(self.hidden_size, self.hidden_size)
         self.uncertainty_inference_2_logvar = nn.Linear(self.hidden_size, self.hidden_size)
 
         # system identification module for functions phi_theta and phi_s
         self.num_layers = 2
-        self.sequence_encoder = nn.LSTM(input_size=self.filter_size, hidden_size=self.hidden_size,
+        self.sequence_encoder = nn.LSTM(input_size=self.reduced_observ_dim, hidden_size=self.hidden_size,
                                         num_layers=self.num_layers, bidirectional=True, batch_first=True)
         self.theta_encoder = nn.Linear(self.hidden_size, self.theta_size)
         self.state_encoder = nn.Linear(self.hidden_size, 2*self.hidden_size)
@@ -158,11 +224,12 @@ class DSSM(nn.Module):
 
         # emission module for function g
         self.state_emission_1 = nn.Linear(self.hidden_size, self.hidden_size)
-        self.state_emission_2 = nn.Linear(self.hidden_size, self.filter_size)
+        self.state_emission_2 = nn.Linear(self.hidden_size, self.reduced_observ_dim)
 
         # deconvolver
+        """
         self.deconvolver = nn.Sequential(nn.ReLU(),
-                                         nn.ConvTranspose2d(self.filter_size,
+                                         nn.ConvTranspose2d(self.reduced_observ_dim,
                                                             self.filter_size,
                                                             kernel_size=[kernel_h//2, kernel_w//2],
                                                             stride=[stride_w//2, stride_h//2]),
@@ -171,6 +238,14 @@ class DSSM(nn.Module):
                                                             self.n_signals,
                                                             kernel_size=[2, 2],
                                                             stride=[2, 2]))
+        """
+
+
+        self.deconvolver = Conv2DTranslation([1,1], [self.observation_dim, self.subseq_len],
+                                                  self.reduced_observ_dim, self.filter_size, self.n_signals)
+
+        out_size = _get_output_dim(self.deconvolver, conv_size[1:])
+        print("DE", out_size)
 
         # labler
         linear_stack = [self.hidden_size, self.hidden_size]
@@ -190,7 +265,7 @@ class DSSM(nn.Module):
             weight.data.normal_(0, stdv)
 
     def update_KL_weight(self):
-        self.kl_weight = min(1, self.kl_weight + 0.0001)
+        self.kl_weight = min(1, self.kl_weight + 0.1)
 
     def PTKLinear(self, X, Y):
         return X.mm(Y.t())
@@ -203,13 +278,16 @@ class DSSM(nn.Module):
 
         # print("Batch shape:", batch.shape)
         # (bs, n_signals, sub_seq_len(20sec), seq_len) -> (bs, hidden_size, 1, seq_len)
-        cbatch = self.convolver_phase_1(batch)
-        # print("Convolved shape: ", cbatch.shape)
+        if self.sep_channels:
+            cbatch = torch.cat([self.convolver_phase_1[j](batch[:, None, j]) for j in range(self.n_signals)], dim=1)
+        else:
+            cbatch = self.convolver_phase_1(batch)
+        #print("Convolved shape: ", cbatch.shape)
         cbatch = torch.transpose(cbatch[:, :, 0, :], 1, 2)  # bs x seq_len x hidden_sz
-        # print("Transformed shape: ", cbatch.shape)
+        #print("Transformed shape: ", cbatch.shape)
 
         # reconstructed sequence
-        obs_rc_sequence = [batch[:, :, :, 0:self.subseq_len]]
+        obs_rc_sequence = []#[batch[:, :, :, 0:self.subseq_len]]
         # print("Obs_1 shape: ", obs_rc_sequence[0].shape)
 
         # 1. System identification part (Encoder) --> infer the context "theta" and the starting state "s_0"
@@ -243,8 +321,11 @@ class DSSM(nn.Module):
         kl_loss = 0
         y_hat = []
 
-        cbatch = self.convolver_phase_2(
-            batch)  # (bs, n_signals, sub_seq_len(20sec), seq_len) -> (bs, reduced_obs, 1, seq_len)
+        # (bs, n_signals, sub_seq_len(20sec), seq_len) -> (bs, reduced_obs, 1, seq_len)
+        if self.sep_channels:
+            cbatch = torch.cat([self.convolver_phase_2[j](batch[:, None, j]) for j in range(self.n_signals)], dim=1)
+        else:
+            cbatch = self.convolver_phase_2(batch)
         cbatch = torch.transpose(cbatch[:, :, 0, :], 1, 2)  # bs x seq_len x reduced_obs
         # print("cbatch:", cbatch.shape)
         for i in range(self.n_samples):
@@ -285,9 +366,9 @@ class DSSM(nn.Module):
             pred = self.state_emission_2(pred)
             #print("Emission shape: ", pred.shape)
             pred = pred[:, :, None, None]
-            # print("TEmission shape: ", pred.shape)
+            #print("TEmission shape: ", pred.shape)
             pred = self.deconvolver(pred)  # 20, 1, 39=observ -> 20, 4, subseq_len
-            # print("DCEmission shape: ", pred.shape)
+            #print("DCEmission shape: ", pred.shape)
 
             # append predicted observation
             obs_rc_sequence.append(pred)
@@ -303,7 +384,7 @@ class DSSM(nn.Module):
             # print("Obs shape: ", obs.shape)
             # print("Pred shape: ", pred.shape)
             rec_loss += F.mse_loss(pred.contiguous().view(-1), obs.contiguous().view(-1))
-            kl_loss += self.kl_loss(beta_mean, beta_logvar)
+            kl_loss += self.kl_loss(beta_mean, beta_logvar) * 10000
             #print(kl_loss)
 
         if forecast_seq_len > 0:
@@ -313,9 +394,9 @@ class DSSM(nn.Module):
         else:
             forecast = None
 
-        return {"rec_loss": rec_loss,
+        return {"rec_loss": rec_loss * self.rec_weight,
          "kl_loss": kl_loss * self.kl_weight,
-         "reconstructions": list_to_tensor(obs_rc_sequence),
+         "reconstructions": torch.cat(obs_rc_sequence, dim=3),
          "forecast": forecast,
          "theta": theta,
          "logits": list_to_tensor(y_hat) #y_hat[-1]

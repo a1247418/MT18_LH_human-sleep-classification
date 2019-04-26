@@ -36,6 +36,7 @@ class Base(object):
         self.best_acc_ = None
         self.best: dict = None
         self.last_acc = None
+        self.unsupervized=False
 
         if self.cudaEfficient:
             self.remap_storage = lambda storage, loc: storage.cuda(0)
@@ -48,7 +49,8 @@ class Base(object):
     def fit(self, arch, ms, data_dir, loader, train_csv, val_csv, channels,
             nclasses, fold, nfolds,
             nbrs, osnbrs, batch_size_train, batch_size_val, oversample, transforms,
-            early_stop=False):
+            early_stop=False, unsupervized=False):
+        self.unsupervized = unsupervized
 
         ldr = utils.get_loader(loader)
 
@@ -69,23 +71,25 @@ class Base(object):
                                               verbose=self.verbose,
                                               label_nbrs=label_nbrs)
 
-        print("\nVAL SET: ", end="")
-        val_ds = utils.SleepLearningDataset(data_dir, val_csv, fold,
-                                            nclasses,
-                                            FeatureExtractor(
-                                                channels).get_features(),
-                                            nbrs, osnbrs,
-                                            ldr,
-                                            verbose=self.verbose, label_nbrs=label_nbrs)
-
         print("\nTRAIN LOADER:")
         train_loader = utils.get_sampler(train_ds, batch_size_train,
                                          oversample, True, True, self.kwargs,
                                          verbose=True)
-        print("\nVAL LOADER:")
-        val_loader = utils.get_sampler(val_ds, batch_size_val,
-                                       False, False, False, self.kwargs,
-                                       verbose=True)
+
+        if not unsupervized:
+            print("\nVAL SET: ", end="")
+            val_ds = utils.SleepLearningDataset(data_dir, val_csv, fold,
+                                                nclasses,
+                                                FeatureExtractor(
+                                                    channels).get_features(),
+                                                nbrs, osnbrs,
+                                                ldr,
+                                                verbose=self.verbose, label_nbrs=label_nbrs)
+
+            print("\nVAL LOADER:")
+            val_loader = utils.get_sampler(val_ds, batch_size_val,
+                                           False, False, False, self.kwargs,
+                                           verbose=True)
 
         # save parameters for model reloading
         ms['input_dim'] = train_ds.dataset_info['input_shape']
@@ -104,12 +108,13 @@ class Base(object):
                                .values())
         }
         self.model = utils.get_model_arch(arch, ms)
+        if self.cudaEfficient:
+            self.model.cuda()
+
         self.criterion, self.optimizer = utils.get_model(self.model, ms,
                                                          self.ds['train_dist'],
                                                          self.cudaEfficient)
-
         if self.cudaEfficient:
-            self.model.cuda()
             self.criterion.cuda()
 
         print("\nMODEL:")
@@ -126,38 +131,43 @@ class Base(object):
         self.nepoch = 0
         bestmodel = copy.deepcopy(self.model)
         bestopt = copy.deepcopy(self.optimizer)
-        bestaccuracy = -1
+        bestaccuracy = -float("inf")
         bestepoch = -1
         stop_train = False
         early_stop_count = 0
-        self.tenacity = 10
+        self.tenacity = 10#1#20
 
         while not stop_train and self.nepoch < ms['epochs']:
             self.nepoch += 1
             tr_metrics, tr_tar, tr_pred = self.trainepoch_(train_loader,
                                                            self.nepoch)
-            val_metrics, val_tar, val_pred = self.valepoch_(
-                val_loader)
 
-            # log accuracy and confusion matrix
-            if self.logger is not None:
-                for tag, val in tr_metrics.items():
-                    if val is not None:
-                        self.logger.scalar_summary(tag+'/train', val.avg,
-                                                   self.nepoch)
+            if unsupervized:
+                self.last_acc = -tr_metrics["rec_loss"].avg
 
-                for tag, val in val_metrics.items():
-                    if val is not None:
-                        self.logger.scalar_summary(tag+'/val', val.avg,
-                                                   self.nepoch)
-                self.last_acc = val_metrics['top1'].avg
-                if self.last_acc > bestaccuracy:
-                    self.logger.cm_summary(tr_pred, tr_tar, 'cm/train',
-                                           self.nepoch,
-                                           ['W', 'N1', 'N2', 'N3', 'REM'])
-                    self.logger.cm_summary(val_pred, val_tar, 'cm/val',
-                                           self.nepoch,
-                                           ['W', 'N1', 'N2', 'N3', 'REM'])
+            else:
+                val_metrics, val_tar, val_pred = self.valepoch_(
+                    val_loader)
+
+                # log accuracy and confusion matrix
+                if self.logger is not None:
+                    for tag, val in tr_metrics.items():
+                        if val is not None:
+                            self.logger.scalar_summary(tag+'/train', val.avg,
+                                                       self.nepoch)
+
+                    for tag, val in val_metrics.items():
+                        if val is not None:
+                            self.logger.scalar_summary(tag+'/val', val.avg,
+                                                       self.nepoch)
+                    self.last_acc = val_metrics['top1'].avg
+                    if self.last_acc > bestaccuracy:
+                        self.logger.cm_summary(tr_pred, tr_tar, 'cm/train',
+                                               self.nepoch,
+                                               ['W', 'N1', 'N2', 'N3', 'REM'])
+                        self.logger.cm_summary(val_pred, val_tar, 'cm/val',
+                                               self.nepoch,
+                                               ['W', 'N1', 'N2', 'N3', 'REM'])
 
             # handling early stop
             if self.last_acc > bestaccuracy:
@@ -165,12 +175,15 @@ class Base(object):
                 bestmodel = copy.deepcopy(self.model)
                 bestopt = copy.deepcopy(self.optimizer)
                 bestepoch = self.nepoch
+                early_stop_count = 0
             elif early_stop:
                 early_stop_count += 1
                 print(f"Patience: {early_stop_count}")
                 if early_stop_count >= self.tenacity:
                     stop_train = True
                     print("EARLY STOPPING!")
+                    if self.unsupervized:
+                        self.save_spectogram(train_loader)
 
         self.best = {
             'model': bestmodel,
@@ -313,11 +326,17 @@ class Base(object):
             # parameters (not just averaging trained experts)
             if self.optimizer:
                 self.optimizer.zero_grad()
+
+                # remove prediction loss if unsupervised learning is required
+                if self.unsupervized:
+                    batchloss = 0
+                # add all auxiliary losses
                 for loss in aux_losses.keys():
                     batchloss += aux_losses[loss]
+                # update kl weight
                 if 'kl_loss' in aux_losses.keys():
                     self.model.update_KL_weight()
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 25)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 50)
                 batchloss.backward()
                 self.optimizer.step()
 
@@ -498,3 +517,29 @@ class Base(object):
             torch.save(state, filename)
             if self.logger._run is not None:
                 self.logger._run.add_artifact(filename)
+
+    def save_spectogram(self, tr_loader: DataLoader):
+        print("Saving some spectrograms")
+        self.model.eval()
+
+        num_spectograms = 3
+
+        to_save = {"truth": [], "reconstruction": []}
+
+        for batch_idx, (data, target) in enumerate(tr_loader):
+            if batch_idx > num_spectograms:
+                break
+            if self.cudaEfficient:
+                data = data[0][np.newaxis,...].cuda()
+
+            # compute output
+            output = self.model(data)
+
+            to_save["truth"].append(data.cpu().numpy())
+            to_save["reconstruction"].append(output["reconstructions"].cpu().detach().numpy())
+
+        np.save(os.path.join(self.logger.log_dir, 'spectograms.np'), to_save)
+
+
+
+

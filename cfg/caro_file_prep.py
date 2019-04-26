@@ -15,7 +15,7 @@ for file in files:
         new_name = "_".join(prt for prt in file.split("_") if not "msco" in prt)
         new_name = "WESA_" + new_name
         new_name = new_name.replace("_ML", "_N1S_ML" if "msco1" in file else "_N2S_ML")
-        new_name = file.replace("_newfilt", "")
+        new_name = new_name.replace("_newfilt", "")
 
         os.rename(data_dir+file, data_dir+new_name)
         print(file,"--->",new_name)
