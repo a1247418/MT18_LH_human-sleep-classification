@@ -333,12 +333,13 @@ class Base(object):
                 # add all auxiliary losses
                 for loss in aux_losses.keys():
                     batchloss += aux_losses[loss]
+                batchloss.backward()
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 10)
+                self.optimizer.step()
+
                 # update kl weight
                 if 'kl_loss' in aux_losses.keys():
                     self.model.update_KL_weight()
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 50)
-                batchloss.backward()
-                self.optimizer.step()
 
             # measure elapsed time
             batch_time.update(time.time() - end)

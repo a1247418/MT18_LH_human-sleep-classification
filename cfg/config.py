@@ -1967,7 +1967,7 @@ def DSSM_caro():
         'filter_size': 16,
         'sep_channels': False,
         'dropout': .2,  # for conv nets
-        'optim': 'adam,lr=0.01',#"adagrad,lr=0.1,lr_decay=0.05", #025',  # large bc of gradient clipping
+        'optim': 'adam,lr=0.005',#"adagrad,lr=0.1,lr_decay=0.05", #025',  # large bc of gradient clipping
         "theta_size": 50,
         'use_theta': False,
         'normalize_context': False,
@@ -2086,7 +2086,8 @@ def caro_all_2D_no_sweat():
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'
             ]),
-            ('EEG', [
+            ('EEG_raw', [
+                'BandPass(fs=100, lowpass=1, highpass=0.1)',
                 'Spectrogram(fs=100, window=150, stride=100)',
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'
@@ -2155,7 +2156,8 @@ def caro_all_2D_onesided_no_sweat():
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'
             ]),
-            ('EEG', [
+            ('EEG_raw', [
+                'BandPass(fs=100, lowpass=1, highpass=0.1)',
                 'Spectrogram(fs=100, window=150, stride=100)',
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'

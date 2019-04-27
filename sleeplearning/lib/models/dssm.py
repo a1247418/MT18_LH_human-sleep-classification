@@ -331,9 +331,8 @@ class DSSM(nn.Module):
         for i in range(self.n_samples):
             # predict next state TODO: Notice that it goes before beta!!!!!!!!!!!!!!!!!!!!!!!!
             h_dec, c_dec = self.state_transition(theta, (h_dec_prev, c_dec_prev)) #  bs x hidden
-            c_dec = c_dec + c_dec_prev # Only predict the difference to the prev state
-            c_dec_prev = c_dec
-            h_dec_prev = h_dec
+            #c_dec = c_dec + c_dec_prev # Only predict the difference to the prev state
+            #h_dec = h_dec + h_dec_prev # Only predict the difference to the prev state
             # print("State shape: ", c_dec.shape)
 
             # get next observation
@@ -384,8 +383,10 @@ class DSSM(nn.Module):
             # print("Obs shape: ", obs.shape)
             # print("Pred shape: ", pred.shape)
             rec_loss += F.mse_loss(pred.contiguous().view(-1), obs.contiguous().view(-1))
-            kl_loss += self.kl_loss(beta_mean, beta_logvar) * 10000
-            #print(kl_loss)
+            kl_loss += self.kl_loss(beta_mean, beta_logvar)
+
+            c_dec_prev = c_dec
+            h_dec_prev = h_dec
 
         if forecast_seq_len > 0:
             with torch.no_grad():
@@ -395,11 +396,11 @@ class DSSM(nn.Module):
             forecast = None
 
         return {"rec_loss": rec_loss * self.rec_weight,
-         "kl_loss": kl_loss * self.kl_weight,
-         "reconstructions": torch.cat(obs_rc_sequence, dim=3),
-         "forecast": forecast,
-         "theta": theta,
-         "logits": list_to_tensor(y_hat) #y_hat[-1]
+                 "kl_loss": kl_loss * self.kl_weight,
+                 "reconstructions": torch.cat(obs_rc_sequence, dim=3),
+                 "forecast": forecast,
+                 "theta": theta,
+                 "logits": list_to_tensor(y_hat) #y_hat[-1]
                 }
 
     def forecast(self, h, c, theta, steps):
@@ -424,4 +425,9 @@ class DSSM(nn.Module):
         return eps.mul(std).add_(mu)
 
     def kl_loss(self, mu, logvar):
-        return -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+        to_return = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+        if to_return != to_return:
+            print(logvar, mu.pow(2), logvar.exp())
+            print("KLdiv:", to_return)
+            raise ValueError("KL divergence invalid!")
+        return nn.ReLU(to_return) #TODO: dirty hack! KL should never be <0 !!
