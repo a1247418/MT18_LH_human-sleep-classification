@@ -182,8 +182,7 @@ class Base(object):
                 if early_stop_count >= self.tenacity:
                     stop_train = True
                     print("EARLY STOPPING!")
-                    if self.unsupervized:
-                        self.save_spectogram(train_loader)
+                    self.save_spectogram(train_loader)
 
         self.best = {
             'model': bestmodel,
@@ -525,19 +524,24 @@ class Base(object):
 
         num_spectograms = 3
 
-        to_save = {"truth": [], "reconstruction": []}
+        to_save = {"truth": [], "reconstruction": [], "target": []}
 
         for batch_idx, (data, target) in enumerate(tr_loader):
             if batch_idx > num_spectograms:
                 break
+
+            data = data[0][np.newaxis, ...]
+            target = target[0][np.newaxis, ...]
+
             if self.cudaEfficient:
-                data = data[0][np.newaxis,...].cuda()
+                data = data.cuda()
 
             # compute output
             output = self.model(data)
 
             to_save["truth"].append(data.cpu().numpy())
             to_save["reconstruction"].append(output["reconstructions"].cpu().detach().numpy())
+            to_save["target"].append(target.cpu().numpy())
 
         np.save(os.path.join(self.logger.log_dir, 'spectograms.np'), to_save)
 

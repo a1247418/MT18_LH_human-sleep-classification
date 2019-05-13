@@ -1978,6 +1978,22 @@ def DSSM_caro():
     }
 
 @ex.named_config
+def Sleep_Classifier_caro():
+    arch = 'SleepClassifier'
+
+    ms = {
+        'epochs': 100,
+        'dropout': .2,
+        'optim': 'adam,lr=0.0001',
+        'attention': True,
+        'normalize_context': False,
+        'context': True,
+        'expert_model': os.path.join('..', 'logs', 'cv_ready', 'caro_new', 'states'),
+        'train_emb': True,
+        'weighted_loss': True
+    }
+
+@ex.named_config
 def AttentionNet_RS160_caro():
     arch = 'AttentionNet'
 

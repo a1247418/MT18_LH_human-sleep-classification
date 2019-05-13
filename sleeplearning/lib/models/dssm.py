@@ -117,15 +117,13 @@ class Conv2DTranslation(nn.Module):
                 stacks[1].append((1,1))
             in_size = filter_dim_in if i == 0 else filter_dim
             out_size = filter_dim_out if i == n_layers - 1 else filter_dim
-            self.conv.add_module(f"ConvT{i}", torch.nn.Sequential(
-                nn.ConvTranspose2d(
+            self.conv.add_module(f"ConvT{i}", nn.ConvTranspose2d(
                     in_size,
                     out_size,
                     kernel_size=(stacks[0][i][0], stacks[1][i][0]),
-                    stride=(stacks[0][i][1], stacks[1][i][1])),
-                nn.ReLU()
-            ))
+                    stride=(stacks[0][i][1], stacks[1][i][1])))
             if i != n_layers - 1:
+                self.conv.add_module(f"ConvTrelu{i}", nn.ReLU())
                 self.conv.add_module(f"ConvTbn{i}", nn.BatchNorm2d(out_size))
 
         print(stacks[0])
@@ -186,14 +184,14 @@ class DSSM(nn.Module):
             dim[0] = 1
             dim = tuple(dim)
             for s in range(self.n_signals):
-                self.convolver_phase_1.append(nn.Sequential(ConvBlock(dim, self.filter_size), nn.Dropout(p=self.dropout)))
-                self.convolver_phase_2.append(nn.Sequential(ConvBlock(dim, self.filter_size), nn.Dropout(p=self.dropout)))
+                self.convolver_phase_1.append(nn.Sequential(ConvBlock(dim, self.filter_size), nn.Dropout(p=self.dropout), nn.ReLU()))
+                self.convolver_phase_2.append(nn.Sequential(ConvBlock(dim, self.filter_size), nn.Dropout(p=self.dropout), nn.ReLU()))
                 self.__setattr__("conv1_"+str(s), self.convolver_phase_1[-1])
                 self.__setattr__("conv2_"+str(s), self.convolver_phase_2[-1])
             conv_size = _get_output_dim(self.convolver_phase_1[0], dim)
         else:
-            self.convolver_phase_1 = nn.Sequential(ConvBlock(self.input_dim, self.filter_size), nn.Dropout(p=self.dropout))
-            self.convolver_phase_2 = nn.Sequential(ConvBlock(self.input_dim, self.filter_size), nn.Dropout(p=self.dropout))
+            self.convolver_phase_1 = nn.Sequential(ConvBlock(self.input_dim, self.filter_size), nn.Dropout(p=self.dropout), nn.ReLU())
+            self.convolver_phase_2 = nn.Sequential(ConvBlock(self.input_dim, self.filter_size), nn.Dropout(p=self.dropout), nn.ReLU())
 
             conv_size = _get_output_dim(self.convolver_phase_1, self.input_dim)
         print("CONV", conv_size)
@@ -430,4 +428,4 @@ class DSSM(nn.Module):
             print(logvar, mu.pow(2), logvar.exp())
             print("KLdiv:", to_return)
             raise ValueError("KL divergence invalid!")
-        return nn.ReLU(to_return) #TODO: dirty hack! KL should never be <0 !!
+        return F.relu(to_return) #TODO: dirty hack! KL should never be <0 !!
