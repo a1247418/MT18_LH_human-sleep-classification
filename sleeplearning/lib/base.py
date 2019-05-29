@@ -182,7 +182,7 @@ class Base(object):
                 if early_stop_count >= self.tenacity:
                     stop_train = True
                     print("EARLY STOPPING!")
-                    self.save_spectogram(train_loader)
+                    self.save_spectogram(train_loader, bestmodel)
 
         self.best = {
             'model': bestmodel,
@@ -518,9 +518,9 @@ class Base(object):
             if self.logger._run is not None:
                 self.logger._run.add_artifact(filename)
 
-    def save_spectogram(self, tr_loader: DataLoader):
+    def save_spectogram(self, tr_loader: DataLoader, bestmodel):
         print("Saving some spectrograms")
-        self.model.eval()
+        bestmodel.eval()
 
         num_spectograms = 3
 
@@ -537,7 +537,11 @@ class Base(object):
                 data = data.cuda()
 
             # compute output
-            output = self.model(data)
+            output = bestmodel(data)
+
+            if "reconstructions" not in output.keys():
+                print("Could not reconstruct spectograms.")
+                return
 
             to_save["truth"].append(data.cpu().numpy())
             to_save["reconstruction"].append(output["reconstructions"].cpu().detach().numpy())

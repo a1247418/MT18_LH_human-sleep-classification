@@ -25,7 +25,7 @@ def cfg():
     save_model = False
     save_best_only = False
     early_stop = True
-    unsupervised = False
+    unsupervized = False
 
     # default dataset settings
     ds = {
@@ -1979,7 +1979,7 @@ def DSSM_caro():
 
 @ex.named_config
 def Sleep_Classifier_caro():
-    arch = 'SleepClassifier'
+    arch = 'StateClassifier'
 
     ms = {
         'epochs': 100,
@@ -1988,7 +1988,7 @@ def Sleep_Classifier_caro():
         'attention': True,
         'normalize_context': False,
         'context': True,
-        'expert_model': os.path.join('..', 'logs', 'cv_ready', 'caro_new', 'states'),
+        'expert_models': [os.path.join('..', 'logs', 'cv_ready', 'caro', 'states')],
         'train_emb': True,
         'weighted_loss': True
     }
