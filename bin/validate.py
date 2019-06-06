@@ -15,8 +15,6 @@ import glob
 def main(args):
     subjects = pd.read_csv(args.subject_csv, header=None)[
         0].dropna().tolist()
-    #data_dir = '/cluster/scratch/llorenz/data/caro/'
-    data_dir = '/cluster/home/llorenz/sleep/MT18_LH_human-sleep-classification/data/sleepedf/'
 
     if os.path.isdir(args.model):
         models = glob.glob(args.model + '/*')
@@ -46,7 +44,7 @@ def main(args):
 
         channel_accuracies = np.array([])
         for subject in subjects:
-            output, metrics = utils.get_model_output(clf, data_dir,
+            output, metrics = utils.get_model_output(clf, args.data_dir,
                                                      subject, channel_drop)
             accuracy = metrics['top1'].avg
             savedict = dict(subject=subject, acc=accuracy)

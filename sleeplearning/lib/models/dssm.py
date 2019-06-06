@@ -1,10 +1,6 @@
-import copy
 import os
 import sys
-import math
 import gridfs
-
-from sleeplearning.lib.models.single_chan_expert import SingleChanExpert
 
 root_dir = os.path.abspath(os.path.join(os.path.dirname('__file__'), '..'))
 sys.path.insert(0, root_dir)
@@ -14,7 +10,6 @@ from torch.nn.init import xavier_normal_ as xavier_normal
 from cfg.config import mongo_url
 import torch
 import torch.nn.functional as F
-import sleeplearning.lib.base
 
 
 def list_to_tensor(list):
@@ -27,13 +22,11 @@ def list_to_tensor(list):
     return tensor
 
 
-# generate input sample and forward to get shape
 def _get_output_dim(net, shape):
+    # Generates input sample and forward to get shape
     bs = 1
     input = torch.rand(bs, *shape)
     output_feat = net(input)
-    #n_size = output_feat.data.view(bs, -1).size(1)
-    #return n_size
     return output_feat.shape
 
 
@@ -67,6 +60,7 @@ class Conv2dWithBn(nn.Module):
 
 
 class ConvBlock(nn.Module):
+    """A stack of Conv-2D layers with max pooling, ReLU, and bach norm."""
     def __init__(self, input_shape, filter_dim):
         super(ConvBlock, self).__init__()
         n_signals = int(input_shape[0])
@@ -86,9 +80,11 @@ class ConvBlock(nn.Module):
 
     def forward(self, x):
         x = self.block(x)
-        return x#.view(x.size(0), -1)
+        return x
+
 
 class Conv2DTranslation(nn.Module):
+    """Creates a stack of transposed convolutional layers to decode from a given dimensionality to a different one."""
     def __init__(self, from_dims, to_dims, filter_dim_in, filter_dim, filter_dim_out):
         super(Conv2DTranslation, self).__init__()
 
@@ -106,7 +102,6 @@ class Conv2DTranslation(nn.Module):
                 dim *= 2
                 print(to_dims[i], dim)
             if to_dims[i] != dim:
-                # out = (in-1)*stride + kernel
                 stacks[i].append((to_dims[i]- dim + 1, 1))
 
         n_layers = max(len(stacks[0]), len(stacks[1]))
@@ -156,12 +151,7 @@ class DSSM(nn.Module):
         self.observation_dim = self.input_dim[1]
         self.subseq_len = int(self.input_dim[2] // self.n_samples)
 
-        kernel_w = self.subseq_len
-        stride_w = self.subseq_len
-        kernel_h = self.observation_dim
-        stride_h = self.observation_dim
         self.reduced_observ_dim = self.filter_size if not self.sep_channels else self.filter_size*self.n_signals
-        # math.floor((self.observation_dim - (kernel_w-1)-1)/stride_w + 1)
 
         # convolver
         if self.sep_channels:
@@ -212,25 +202,11 @@ class DSSM(nn.Module):
         self.state_emission_2 = nn.Linear(self.hidden_size, self.reduced_observ_dim)
 
         # deconvolver
-        """
-        self.deconvolver = nn.Sequential(nn.ReLU(),
-                                         nn.ConvTranspose2d(self.reduced_observ_dim,
-                                                            self.filter_size,
-                                                            kernel_size=[kernel_h//2, kernel_w//2],
-                                                            stride=[stride_w//2, stride_h//2]),
-                                         nn.ReLU(),
-                                         nn.ConvTranspose2d(self.filter_size,
-                                                            self.n_signals,
-                                                            kernel_size=[2, 2],
-                                                            stride=[2, 2]))
-        """
-
-
         self.deconvolver = Conv2DTranslation([1,1], [self.observation_dim, self.subseq_len],
                                                   self.reduced_observ_dim, self.filter_size, self.n_signals)
 
         out_size = _get_output_dim(self.deconvolver, conv_size[1:])
-        print("DE", out_size)
+        print("Deconvolver out-dim:", out_size)
 
         # labler
         linear_stack = [self.hidden_size, self.hidden_size]
@@ -272,9 +248,8 @@ class DSSM(nn.Module):
         #print("Transformed shape: ", cbatch.shape)
 
         # reconstructed sequence
-        obs_rc_sequence = []#[batch[:, :, :, 0:self.subseq_len]]
+        obs_rc_sequence = []
         states = []
-        # print("Obs_1 shape: ", obs_rc_sequence[0].shape)
 
         # 1. System identification part (Encoder) --> infer the context "theta" and the starting state "s_0"
         # --------------------------------------------------------------------------------------------------
@@ -283,8 +258,7 @@ class DSSM(nn.Module):
         initial_state = self.state_encoder(first_layer_back_pass)
         h_dec_prev = initial_state[:, :self.hidden_size]
         c_dec_prev = initial_state[:, self.hidden_size:]
-        #c_dec_prev = torch.zeros((cbatch.shape[0], self.hidden_size)).float().to(self.device)
-        #h_dec_prev = torch.zeros((cbatch.shape[0], self.hidden_size)).float().to(self.device)
+
         if self.use_theta:
             if theta is None:
                 theta = self.theta_encoder(first_layer_back_pass)
@@ -295,17 +269,16 @@ class DSSM(nn.Module):
 
         # MMD regularization term
         mmd_loss = 0
-        # TODO: Uncomment, when theta plays a role
-        #for idx in range(seq_len - 1):
-        #    mean_KFX = torch.mean(self.PTKLinear(output[:, idx, :], output[:, idx, :]))
-        #    mean_KF_gz = torch.mean(self.PTKLinear(output[:, idx + 1, :], output[:, idx + 1, :]))
-        #    mmd_loss += mean_KF_gz + mean_KFX - 2.0 * torch.mean(self.PTKLinear(output[:, idx + 1, :], output[:, idx, :]))
-
+        if self.use_theta:
+            for idx in range(self.n_samples):
+                mean_KFX = torch.mean(self.PTKLinear(output[:, idx, :], output[:, idx, :]))
+                mean_KF_gz = torch.mean(self.PTKLinear(output[:, idx + 1, :], output[:, idx + 1, :]))
+                mmd_loss += mean_KF_gz + mean_KFX - 2.0 * torch.mean(self.PTKLinear(output[:, idx + 1, :], output[:, idx, :]))
 
         # 2. Sequence prediction (Decoder)
         # ---------------------------------------
-        rec_loss = mmd_loss # TODO: Watch out here....
-        #rec_loss = 0
+        rec_loss = mmd_loss
+        rec_loss = 0
         kl_loss = 0
         y_hat = []
 
@@ -317,10 +290,8 @@ class DSSM(nn.Module):
         cbatch = torch.transpose(cbatch[:, :, 0, :], 1, 2)  # bs x seq_len x reduced_obs
         # print("cbatch:", cbatch.shape)
         for i in range(self.n_samples):
-            # predict next state TODO: Notice that it goes before beta!!!!!!!!!!!!!!!!!!!!!!!!
+            # predict next state
             h_dec, c_dec = self.state_transition(theta, (h_dec_prev, c_dec_prev)) #  bs x hidden
-            #c_dec = c_dec + c_dec_prev # Only predict the difference to the prev state
-            #h_dec = h_dec + h_dec_prev # Only predict the difference to the prev state
             # print("State shape: ", c_dec.shape)
 
             # get next observation
@@ -342,11 +313,11 @@ class DSSM(nn.Module):
             # beta = beta * self.noise_vector
 
             # update state with innovation vector if not in forecast mode
-            # (c_dec is the a priori stat predicion. here it gets updated with beta to form the posterior)
+            # c_dec is the a priori stat predicion. here it gets updated with beta to form the posterior
             if filtering_mode:
-                c_dec = c_dec + beta_mean * self.noise_scalar.expand_as(beta) #+ self.state_bias
+                c_dec = c_dec + beta_mean * self.noise_scalar.expand_as(beta)
             else:
-                c_dec = c_dec + beta #+ self.state_bias
+                c_dec = c_dec + beta
 
             # predict next observation
             pred = F.relu(self.state_emission_1(c_dec))
@@ -354,16 +325,14 @@ class DSSM(nn.Module):
             #print("Emission shape: ", pred.shape)
             pred = pred[:, :, None, None]
             #print("TEmission shape: ", pred.shape)
-            pred = self.deconvolver(pred)  # 20, 1, 39=observ -> 20, 4, subseq_len
+            pred = self.deconvolver(pred)
             #print("DCEmission shape: ", pred.shape)
 
             # append state
             states.append(c_dec)
-            #print(c_dec.shape)
 
             # append predicted observation
             obs_rc_sequence.append(pred)
-            #print(pred.shape)
 
             # append predicted label
             # print("cdec shape", c_dec.shape)
@@ -408,7 +377,7 @@ class DSSM(nn.Module):
             #print("Emission shape: ", pred.shape)
             pred = pred[:, :, None, None]
             #print("TEmission shape: ", pred.shape)
-            pred = self.deconvolver(pred)  # 20, 1, 39=observ -> 20, 4, subseq_len
+            pred = self.deconvolver(pred)
             # append it to array
             x.append(pred)
         return list_to_tensor(x)
