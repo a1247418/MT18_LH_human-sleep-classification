@@ -41,6 +41,20 @@ Training an unsupervized DSSM requires trained expert models. By changing the "u
 This model is responsible for translating unsupervized DSSM states into sleep stage predictions. It requires a trained unsupervized DSSM.
 `bsub -n 5 -W 5:00 -R "rusage[mem=6000,scratch=25000,ngpus_excl_p=1]" python train.py with caro_all_2D_no_sweat Sleep_Classifier_caro save_model=True ds.fold=0 ds.data_dir=[DATA DIRECTORY] ds.train_csv=../cfg/caro/train.csv ds.val_csv=../cfg/caro/val.csv`
 
+### Options
+The available run-options can be found in config.py. Some of the more important ones:
+save_model: whether to save the model or not 
+unsupervized: should be False (default) except for the unsupervized DSSM
+ds.data_dir: where the data lies
+ds.train_csv/ds.val_csv: where train/validation splits are saved
+log_dir: where to save the logs. this includes checkpoints and spectograms
+ds.nbrs: how many neighbouring samples to consider
+ds.osnbrs: whether the neighbouring samples should be onesided (default=False), meaning coming before the sample to predict instead of symetrically around it.
+ds.fold: what fold to train/validate on. this is used for cross-validation
+ms.label_nbrs: whether to calculate the loss from neighbouring samples as well
+ms.dropout: dropout in the convolutional layers
+ms.hidden size: dimensionality of nn layers
+ms.hidden size: dimensionality of cnn layers
 
 ### Evaluation Via Cross-Validation
 
