@@ -27,19 +27,23 @@ of neighbors.
 
 #### Single Channel Expert Model
 Training the single channel expert model local on the EEG channel:
-`bsub -n 5 -W 4:00 -R "rusage[mem=6000,scratch=25000,ngpus_excl_p=1]" python train.py with caro_EEG_2D singlechanexp save_model=True ds.fold=0 ds.data_dir=[DATA DIRECTORY] ds.train_csv=../cfg/caro/train.csv ds.val_csv=../cfg/caro/val.csv`
+
+`bsub -n 5 -W 4:00 -R "rusage[mem=6000,scratch=25000,ngpus_excl_p=1]" python train.py with caro_EEG_2D singlechanexp save_model=True ds.fold=0 ds.data_dir=[DATA DIRECTORY] ds.train_csv=../cfg/caro/debug_train.csv ds.val_csv=../cfg/caro/debug_val.csv`
 
 #### Attention Model (Requires trained Expert Models)
 The attention model requires trained experts models. Training the attention model local on all channels:
-`bsub -n 5 -W 5:00 -R "rusage[mem=6000,scratch=25000,ngpus_excl_p=1]" python train.py with caro_all_2D_no_sweat AttentionNet_RS160_caro save_model=True ds.fold=0 ds.data_dir=[DATA DIRECTORY] ds.train_csv=../cfg/caro/train.csv ds.val_csv=../cfg/caro/val.csv`
+
+`bsub -n 5 -W 5:00 -R "rusage[mem=6000,scratch=25000,ngpus_excl_p=1]" python train.py with caro_all_2D_no_sweat AttentionNet_RS160_caro save_model=True ds.fold=0 ds.data_dir=[DATA DIRECTORY] ds.train_csv=../cfg/caro/debug_train.csv ds.val_csv=../cfg/caro/debug_val.csv`
 
 #### DSSM
 Training an unsupervized DSSM requires trained expert models. By changing the "unsupervized" flag, you can switch between the supervized and unsupervized DSSM:
-`bsub -n 5 -W 10:00 -R "rusage[mem=18000,scratch=60000,ngpus_excl_p=1]" python train.py with caro_all_2D_no_sweat DSSM_caro save_model=True unsupervized=[True/False] ds.fold=0 ds.data_dir=[DATA DIRECTORY] ds.train_csv=../cfg/caro/train.csv ds.val_csv=../cfg/caro/val.csv`
+
+`bsub -n 5 -W 10:00 -R "rusage[mem=18000,scratch=60000,ngpus_excl_p=1]" python train.py with caro_all_2D_no_sweat DSSM_caro save_model=True unsupervized=[True/False] ds.fold=0 ds.data_dir=[DATA DIRECTORY] ds.train_csv=../cfg/caro/debug_train.csv ds.val_csv=../cfg/caro/debug_val.csv`
 
 #### Sleep Classifier
 This model is responsible for translating unsupervized DSSM states into sleep stage predictions. It requires a trained unsupervized DSSM.
-`bsub -n 5 -W 5:00 -R "rusage[mem=6000,scratch=25000,ngpus_excl_p=1]" python train.py with caro_all_2D_no_sweat Sleep_Classifier_caro save_model=True ds.fold=0 ds.data_dir=[DATA DIRECTORY] ds.train_csv=../cfg/caro/train.csv ds.val_csv=../cfg/caro/val.csv`
+
+`bsub -n 5 -W 5:00 -R "rusage[mem=6000,scratch=25000,ngpus_excl_p=1]" python train.py with caro_all_2D_no_sweat Sleep_Classifier_caro save_model=True ds.fold=0 ds.data_dir=[DATA DIRECTORY] ds.train_csv=../cfg/caro/debug_train.csv ds.val_csv=../cfg/caro/debug_val.csv`
 
 ### Options
 The available run-options can be found in config.py. Some of the more important ones:

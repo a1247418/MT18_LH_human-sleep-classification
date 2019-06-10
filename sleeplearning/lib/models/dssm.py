@@ -171,9 +171,9 @@ class DSSM(nn.Module):
             self.convolver_phase_2 = nn.Sequential(ConvBlock(self.input_dim, self.filter_size), nn.Dropout(p=self.dropout))
 
             conv_size = _get_output_dim(self.convolver_phase_1, self.input_dim)
-        print("CONV", conv_size)
+        print("DSSM state size:", conv_size)
 
-        print("Dims", self.observation_dim, self.reduced_observ_dim)
+        print("DSSM obervation & reduced obs. size:", self.observation_dim, self.reduced_observ_dim)
 
         # embedding module (for calculating beta)
         self.uncertainty_inference_1 = nn.Linear(self.reduced_observ_dim+self.hidden_size, self.hidden_size)
