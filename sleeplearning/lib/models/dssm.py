@@ -133,8 +133,10 @@ class DSSM(nn.Module):
     def __init__(self, ms: dict):
         super(DSSM, self).__init__()
 
-        self.kl_weight = 0.1
-        self.rec_weight = 1
+        self.kl_weight = ms["kl_weight"]
+        self.rec_weight = ms["reconstruction_weight"]
+        self.mmd_weight = ms["mmd_weight"]
+        self.do_kl_annealing = ms["kl_annealing"]
 
         self.input_dim = ms['input_dim']
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -226,7 +228,8 @@ class DSSM(nn.Module):
             weight.data.normal_(0, stdv)
 
     def update_KL_weight(self):
-        self.kl_weight = min(1, self.kl_weight + 0.1)
+        if self.do_kl_annealing:
+            self.kl_weight = min(1, self.kl_weight + 0.01)
 
     def PTKLinear(self, X, Y):
         return X.mm(Y.t())
@@ -235,7 +238,7 @@ class DSSM(nn.Module):
         super(DSSM, self).train(mode=mode)
 
     def forward(self, batch, theta=None, filtering_mode=False, forecast_seq_len=0):
-        #batch shape = [32, 4, 76, 1050] = [bs, n_channels, spectogram_dim, 50+(1+n_neighbours)]
+        #batch shape = [32, 4, 76, 1050] = [bs, n_channels, spectogram_dim, 50*(1+n_neighbours)]
 
         # print("Batch shape:", batch.shape)
         # (bs, n_signals, sub_seq_len(20sec), seq_len) -> (bs, hidden_size, 1, seq_len)
@@ -268,16 +271,15 @@ class DSSM(nn.Module):
             theta = torch.zeros([batch.shape[0], self.theta_size]).float().to(self.device)
 
         # MMD regularization term
-        mmd_loss = 0
+        mmd_loss = torch.tensor(0).float().to(self.device)
         if self.use_theta:
-            for idx in range(self.n_samples):
+            for idx in range(self.n_samples-1):
                 mean_KFX = torch.mean(self.PTKLinear(output[:, idx, :], output[:, idx, :]))
                 mean_KF_gz = torch.mean(self.PTKLinear(output[:, idx + 1, :], output[:, idx + 1, :]))
                 mmd_loss += mean_KF_gz + mean_KFX - 2.0 * torch.mean(self.PTKLinear(output[:, idx + 1, :], output[:, idx, :]))
 
         # 2. Sequence prediction (Decoder)
         # ---------------------------------------
-        rec_loss = mmd_loss
         rec_loss = 0
         kl_loss = 0
         y_hat = []
@@ -359,6 +361,7 @@ class DSSM(nn.Module):
 
         return {"rec_loss": rec_loss * self.rec_weight,
                  "kl_loss": kl_loss * self.kl_weight,
+                 "mmd_loss": mmd_loss * self.mmd_weight,
                  "reconstructions": torch.cat(obs_rc_sequence, dim=3),
                  "forecast": forecast,
                  "theta": theta,
@@ -393,4 +396,4 @@ class DSSM(nn.Module):
             print(logvar, mu.pow(2), logvar.exp())
             print("KLdiv:", to_return)
             raise ValueError("KL divergence invalid!")
-        return F.relu(to_return) #TODO: dirty hack! KL should never be <0 !!
+        return to_return#F.relu(to_return) #TODO: Investigate! KL should never be <0 !!

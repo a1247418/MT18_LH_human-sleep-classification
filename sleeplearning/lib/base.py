@@ -419,6 +419,8 @@ class Base(object):
                 metrics['rec_loss'] = utils.AverageMeter()
             if 'kl_loss' in batchout.keys():
                 metrics['kl_loss'] = utils.AverageMeter()
+            if 'mmd_loss' in batchout.keys():
+                metrics['mmd_loss'] = utils.AverageMeter()
 
         aux_loss = {}
         metrics['loss'].update(batchloss.item(), data.size(0))
@@ -430,6 +432,10 @@ class Base(object):
             aux_loss_kl = batchout['kl_loss']
             aux_loss['kl_loss'] = aux_loss_kl
             metrics['kl_loss'].update(aux_loss_kl.item(), data.size(0))
+        if 'mmd_loss' in batchout.keys():
+            aux_loss_mmd = batchout['mmd_loss']
+            aux_loss['mmd_loss'] = aux_loss_mmd
+            metrics['mmd_loss'].update(aux_loss_mmd.item(), data.size(0))
 
         # measure accuracy
         (prec1, prec2), y_pred = self.accuracy_(

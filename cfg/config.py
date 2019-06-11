@@ -1955,19 +1955,17 @@ def sleepedf_2D_BP30():
         ]
     }
 
-
-############## NEW!
 @ex.named_config
 def DSSM_caro():
     arch = 'DSSM'
 
     ms = {
         'epochs': 200,
-        'hidden_size': 8,
-        'filter_size': 16,
+        'hidden_size': 64,
+        'filter_size': 64,
         'sep_channels': False,
         'dropout': .2,  # for conv nets
-        'optim': 'adam,lr=0.005',#"adagrad,lr=0.1,lr_decay=0.05", #025',  # large bc of gradient clipping
+        'optim': 'adam,lr=0.005',
         "theta_size": 50,
         'use_theta': False,
         'normalize_context': False,
@@ -1975,6 +1973,10 @@ def DSSM_caro():
         'train_emb': True,
         'weighted_loss': True,
         'label_nbrs': True,
+        'kl_annealing': False,
+        'kl_weight': 1,
+        'reconstruction_weight': 1,
+        'mmd_weight': 1
     }
 
 @ex.named_config

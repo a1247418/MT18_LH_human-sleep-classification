@@ -35,7 +35,7 @@ class Carofile(BaseLoader):
             print(mat.keys())
         if 4 in self.hypnogram:
             print(path)
-            raise Exception()
+            raise Exception("Invalid value in sleep labels")
 
         else:
             epoch_scoring_length = self.epoch_length
