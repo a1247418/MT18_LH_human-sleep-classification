@@ -11,7 +11,6 @@ import sleeplearning.lib.base
 class StateClassifier(nn.Module):
     def __init__(self, ms: dict):
         super(StateClassifier, self).__init__()
-        self.dropout = ms['dropout']
         num_classes = ms['nclasses']
 
         clf = sleeplearning.lib.base.Base()
@@ -25,10 +24,10 @@ class StateClassifier(nn.Module):
         input_dim_classifier = clf.model.hidden_size
 
         self.classifier = nn.Sequential(
-             nn.Dropout(p=self.dropout),
              nn.Linear(input_dim_classifier, input_dim_classifier // 2),
              nn.ReLU(),
-             nn.Dropout(p=self.dropout),
+             nn.Linear(input_dim_classifier // 2, input_dim_classifier // 2),
+             nn.ReLU(),
              nn.Linear(input_dim_classifier // 2, num_classes),
         )
 

@@ -237,7 +237,7 @@ class DSSM(nn.Module):
     def train(self, mode=True):
         super(DSSM, self).train(mode=mode)
 
-    def forward(self, batch, theta=None, filtering_mode=False, forecast_seq_len=0):
+    def forward(self, batch, theta=None, filtering_mode=True, forecast_seq_len=0):
         #batch shape = [32, 4, 76, 1050] = [bs, n_channels, spectogram_dim, 50*(1+n_neighbours)]
 
         # print("Batch shape:", batch.shape)
@@ -310,7 +310,7 @@ class DSSM(nn.Module):
             # Uncertainty scaling -- for the moment we have three options
             # Option 1: do not scale uncertainty
             # Option 2: scale entire uncertainty vector with one learnable scalar
-            beta = beta * self.noise_scalar.expand_as(beta)
+            # beta = beta * self.noise_scalar.expand_as(beta)
             # Option 3: scale uncertainty vector with a learnable vector
             # beta = beta * self.noise_vector
 

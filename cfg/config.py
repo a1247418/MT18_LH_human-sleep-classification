@@ -1985,13 +1985,8 @@ def Sleep_Classifier_caro():
 
     ms = {
         'epochs': 100,
-        'dropout': .2,
         'optim': 'adam,lr=0.0001',
-        'attention': True,
-        'normalize_context': False,
-        'context': True,
         'expert_models': [os.path.join('..', 'logs', 'cv_ready', 'caro', 'states')],
-        'train_emb': True,
         'weighted_loss': True
     }
 

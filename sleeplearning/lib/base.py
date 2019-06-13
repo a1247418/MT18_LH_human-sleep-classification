@@ -525,12 +525,12 @@ class Base(object):
                 self.logger._run.add_artifact(filename)
 
     def save_spectogram(self, tr_loader: DataLoader, bestmodel):
-        print("Saving some spectrograms")
+        print("Saving some spectrograms to", self.logger.log_dir)
         bestmodel.eval()
 
         num_spectograms = 3
 
-        to_save = {"truth": [], "reconstruction": [], "target": []}
+        to_save = {"truth": [], "reconstruction": [], "target": [], "logits": []}
 
         for batch_idx, (data, target) in enumerate(tr_loader):
             if batch_idx > num_spectograms:
@@ -551,6 +551,7 @@ class Base(object):
 
             to_save["truth"].append(data.cpu().numpy())
             to_save["reconstruction"].append(output["reconstructions"].cpu().detach().numpy())
+            to_save["logits"].append(output["logits"].cpu().detach().numpy())
             to_save["target"].append(target.cpu().numpy())
 
         np.save(os.path.join(self.logger.log_dir, 'spectograms.np'), to_save)

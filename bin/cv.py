@@ -40,7 +40,8 @@ def cv(ds, arch, ms, cuda, log_dir, seed, _run):
     predictions = np.array([], dtype=int)
     clf = Base(logger=logger, cuda=cuda, verbose=True)
 
-    print(ds['nfolds'])
+    print("nfolds:", ds['nfolds'])
+    ds['nfolds'] = int(ds['nfolds'])
     for i in range(ds['nfolds']):
         fold_accs = np.array([])
         checkpoint_path = os.path.join(log_dir, 'fold{}'.format(i),
