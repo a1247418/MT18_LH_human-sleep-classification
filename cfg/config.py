@@ -1961,20 +1961,20 @@ def DSSM_caro():
 
     ms = {
         'epochs': 200,
-        'hidden_size': 64,
-        'filter_size': 64,
+        'hidden_size': 128,
+        'filter_size': 128,
         'sep_channels': False,
         'dropout': .2,  # for conv nets
         'optim': 'adam,lr=0.005',
         "theta_size": 50,
         'use_theta': False,
-        'normalize_context': False,
-        'context': True,
-        'train_emb': True,
+        'normalize_context': False, #TODO check if needed
+        'context': True, #TODO check if needed
+        'train_emb': True, #TODO check if needed
         'weighted_loss': True,
         'label_nbrs': True,
         'kl_annealing': False,
-        'kl_weight': 1,
+        'kl_weight': 50,
         'reconstruction_weight': 1,
         'mmd_weight': 1
     }
@@ -2128,7 +2128,6 @@ def caro_all_2D_no_sweat():
 def caro_all_2D_onesided():
     ds = {
         'loader': 'Carofile',
-        'nbrs': 20,
         'osnbrs': True,
         'channels': [
             ('EEG', [
@@ -2159,7 +2158,6 @@ def caro_all_2D_onesided():
 def caro_all_2D_onesided_no_sweat():
     ds = {
         'loader': 'Carofile',
-        'nbrs': 20,
         'osnbrs': True,
         'channels': [
             #  To filter out sweating artefacts

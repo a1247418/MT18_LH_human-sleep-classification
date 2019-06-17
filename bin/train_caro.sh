@@ -14,7 +14,7 @@ if [ "${dataset}" = "caro" ]; then
     n_folds=7
 fi
 
-unsupervized=true
+unsupervized=True
 if [ "${setup}" = "dssm_supervised" ]; then
     data_config=caro_all_2D_onesided_no_sweat
     model=DSSM_caro
