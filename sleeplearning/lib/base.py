@@ -84,7 +84,7 @@ class Base(object):
                                                     channels).get_features(),
                                                 nbrs, osnbrs,
                                                 ldr,
-                                                verbose=self.verbose, label_nbrs=label_nbrs)
+                                                verbose=self.verbose, label_nbrs=False)
 
             print("\nVAL LOADER:")
             val_loader = utils.get_sampler(val_ds, batch_size_val,

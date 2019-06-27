@@ -2005,6 +2005,7 @@ def AttentionNet_RS160_caro():
             [os.path.join('..', 'logs', 'cv_ready', 'caro_new', 'EOGR'),
              os.path.join('..', 'logs', 'cv_ready', 'caro_new', 'EMG'),
              os.path.join('..', 'logs', 'cv_ready', 'caro_new', 'EOGL'),
+             os.path.join('..', 'logs', 'cv_ready', 'caro_new', 'EEG_raw'),
              os.path.join('..', 'logs', 'cv_ready', 'caro_new', 'EEG')],
         'train_emb': True,
         'weighted_loss': True
@@ -2254,7 +2255,7 @@ def caro_EEG_2D_no_sweat():
         'loader': 'Carofile',
         'channels': [
             ('EEG', [
-                'BandPass(fs=100, lowpass=100, highpass=1)',
+                'BandPass(fs=100, lowpass=1, highpass=0.1)',
                 'Spectrogram(fs=100, window=150, stride=100)',
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'
