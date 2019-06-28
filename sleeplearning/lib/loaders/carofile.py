@@ -17,19 +17,28 @@ class Carofile(BaseLoader):
         mat = scipy.io.loadmat(self.path)
         self.sampling_rate_ = int(mat['sampling_rate'][0][0])
 
-        for expert in ["E1","E2","E3","E4","E5","CL"]:
-            # TODO use labelling more intelligently
-            if f'sleepStage_score_{expert}' in mat:
-                self.artefact_data = {'artefacts': mat[f'artfact_per4s_{expert}'][0],
-                                      'epoch_size': 4}
+        epoch_scoring_length = int(mat['epoch_size_scoring_sec'][0][0])
+        if epoch_scoring_length % self.epoch_length != 0:
+            raise ValueError(
+                "epoch length ({0}s) must divide scoring length ({1}s)".format(
+                    str(self.epoch_length), str(epoch_scoring_length)))
 
-                epoch_scoring_length = int(mat['epoch_size_scoring_sec'][0][0])
-                if epoch_scoring_length % self.epoch_length != 0:
-                    raise ValueError(
-                        "epoch length ({0}s) must divide scoring length ({1}s)".format(
-                            str(self.epoch_length), str(epoch_scoring_length)))
-                self.hypnogram = mat[f'sleepStage_score_{expert}'][0]
-                break
+        experts_present = []
+        for expert in ["E1","E2","E3","E4","E5","CL"]:
+            if f'sleepStage_score_{expert}' in mat:
+                experts_present.append(expert)
+
+        self.artefact_data = {'artefacts': [], 'epoch_size': 4}
+        hypnograms = []
+        self.hypnogram = np.zeros_like(mat[f'sleepStage_score_{experts_present[0]}'][0])
+        for i_e, expert in enumerate(experts_present):
+            if i_e == 0:
+                self.artefact_data['artefacts'] = mat[f'artfact_per4s_{expert}'][0]
+            else:
+                self.artefact_data['artefacts'] = [max(self.artefact_data['artefacts'][i_v], val) for i_v, val in enumerate(mat[f'artfact_per4s_{expert}'][0])]
+            hypnograms.append(mat[f'sleepStage_score_{expert}'][0])
+        for h in range(len(self.hypnogram)):
+            self.hypnogram[h] = np.bincount([hypnograms[h_id][h] for h_id in range(len(experts_present))]).argmax()
 
         if self.hypnogram is None:
             print(mat.keys())
