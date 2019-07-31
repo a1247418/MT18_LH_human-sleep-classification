@@ -42,7 +42,7 @@ def cv(ds, arch, ms, cuda, log_dir, seed, _run):
 
     print("nfolds:", ds['nfolds'])
     ds['nfolds'] = int(ds['nfolds'])
-    for i in range(ds['nfolds']):
+    for i in range(1, ds['nfolds']):  #TODO: Attention: starts with 1 because 0 is for experimentation
         fold_accs = np.array([])
         checkpoint_path = os.path.join(log_dir, 'fold{}'.format(i),
                                        'checkpoint.pth.tar')
