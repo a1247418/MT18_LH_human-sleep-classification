@@ -11,7 +11,8 @@ class Carofile(BaseLoader):
     def __init__(self, path: str, epoch_length: int = 20, verbose: bool = False):
         super().__init__(path, epoch_length)
         psg_dict = {'EEG_raw': 'FpzA2', 'EEG': 'FpzA2_filt', 'EOGR': 'EOGR_filt',
-                    'EOGL': 'EOGL_filt', 'EMG': 'EMG_filt'}
+                    'EOGL': 'EOGL_filt', 'EMG': 'EMG_filt', 'EOGR_raw': 'EOGR',
+                    'EOGL_raw': 'EOGL', 'EMG_raw': 'EMG'}
         self.label = self.path.split('/')[-1][5:-12]
         self.psgs = {}
         mat = scipy.io.loadmat(self.path)

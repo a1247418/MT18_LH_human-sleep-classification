@@ -46,7 +46,7 @@ class Base(object):
             self.remap_storage = lambda storage, loc: storage
             self.kwargs = {}
 
-    def fit(self, arch, ms, data_dir, loader, train_csv, val_csv, channels,
+    def fit(self, arch, ms, data_dir, loader, train_csv, val_csv, tune_csv, channels,
             nclasses, fold, nfolds,
             nbrs, osnbrs, batch_size_train, batch_size_val, oversample, transforms,
             early_stop=False, unsupervized=False):
@@ -91,6 +91,21 @@ class Base(object):
                                            False, False, False, self.kwargs,
                                            verbose=True)
 
+        if tune_csv:
+            print("\nTUNE SET: ", end="")
+            tune_ds = utils.SleepLearningDataset(data_dir, tune_csv, fold,
+                                                nclasses,
+                                                FeatureExtractor(
+                                                    channels).get_features(),
+                                                nbrs, osnbrs,
+                                                ldr,
+                                                verbose=self.verbose, label_nbrs=label_nbrs)
+
+            print("\nTUNE LOADER:")
+            tune_loader = utils.get_sampler(tune_ds, batch_size_train,
+                                            oversample, True, True, self.kwargs,
+                                           verbose=True)
+
         # save parameters for model reloading
         ms['input_dim'] = train_ds.dataset_info['input_shape']
         ms['nclasses'] = nclasses
@@ -110,7 +125,6 @@ class Base(object):
         self.model = utils.get_model_arch(arch, ms)
         if self.cudaEfficient:
             self.model.cuda()
-
         self.criterion, self.optimizer = utils.get_model(self.model, ms,
                                                          self.ds['train_dist'],
                                                          self.cudaEfficient)
@@ -135,7 +149,19 @@ class Base(object):
         bestepoch = -1
         stop_train = False
         early_stop_count = 0
-        self.tenacity = 10#1#20
+        self.tenacity = 6
+
+
+        # Ensemblers are not trained
+        if self.arch == "Ensembler":
+            self.best = {
+                'model': bestmodel,
+                'optimizer': bestopt,
+                'accuracy': bestaccuracy,
+                'epoch': bestepoch
+            }
+            self.best_acc_ = bestaccuracy
+            return
 
         while not stop_train and self.nepoch < ms['epochs']:
             self.nepoch += 1
@@ -182,7 +208,42 @@ class Base(object):
                 if early_stop_count >= self.tenacity:
                     stop_train = True
                     print("EARLY STOPPING!")
+                    print("Best epoch =", bestepoch)
                     self.save_spectogram(train_loader, bestmodel)
+
+        if tune_csv:
+            for _ in range(5):
+                tr_metrics, tr_tar, tr_pred = self.trainepoch_(tune_loader,
+                                                               self.nepoch)
+                if unsupervized:
+                    self.last_acc = -tr_metrics["rec_loss"].avg
+
+                else:
+                    val_metrics, val_tar, val_pred = self.valepoch_(
+                        val_loader)
+
+                    # log accuracy and confusion matrix
+                    if self.logger is not None:
+                        for tag, val in tr_metrics.items():
+                            if val is not None:
+                                self.logger.scalar_summary(tag+'/train', val.avg,
+                                                           self.nepoch)
+
+                        for tag, val in val_metrics.items():
+                            if val is not None:
+                                self.logger.scalar_summary(tag+'/val', val.avg,
+                                                           self.nepoch)
+                        self.last_acc = val_metrics['top1'].avg
+                        if self.last_acc > bestaccuracy:
+                            self.logger.cm_summary(tr_pred, tr_tar, 'cm/train',
+                                                   self.nepoch,
+                                                   ['W', 'N1', 'N2', 'N3', 'REM'])
+                            self.logger.cm_summary(val_pred, val_tar, 'cm/val',
+                                                   self.nepoch,
+                                                   ['W', 'N1', 'N2', 'N3', 'REM'])
+                bestaccuracy = self.last_acc
+                bestmodel = copy.deepcopy(self.model)
+                bestopt = copy.deepcopy(self.optimizer)
 
         self.best = {
             'model': bestmodel,
@@ -272,6 +333,7 @@ class Base(object):
         return probas
 
     def restore(self, checkpoint_dir):
+        print("RESTORING:", checkpoint_dir)
         checkpoint = torch.load(checkpoint_dir,
                                 map_location=self.remap_storage)
         self.ds = checkpoint['ds']
@@ -285,7 +347,6 @@ class Base(object):
         self.criterion, self.optimizer = utils.get_model(self.model, self.ms,
                                                          self.ds['train_dist'],
                                                          self.cudaEfficient)
-
         self.model.load_state_dict(checkpoint['state_dict'])
         # Only load if optimizer is not null (average of trained models)
         if checkpoint['optimizer']:
@@ -332,6 +393,8 @@ class Base(object):
                 # add all auxiliary losses
                 for loss in aux_losses.keys():
                     batchloss += aux_losses[loss]
+                if self.cudaEfficient:
+                    batchloss.cuda()
                 batchloss.backward()
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), 10)
                 self.optimizer.step()

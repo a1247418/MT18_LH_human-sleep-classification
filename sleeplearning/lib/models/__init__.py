@@ -3,4 +3,5 @@ __all__ = ["single_chan_expert",
            "amoe",
            "attention_net",
            "dssm",
-           "state_classifier"]
+           "state_classifier",
+           "ensembler"]

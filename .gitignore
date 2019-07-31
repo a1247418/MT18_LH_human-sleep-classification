@@ -3,3 +3,7 @@
 *.mat
 *.npz
 logs/*
+hypnogram_display.ipynb
+results.zip
+stats/data_descriptor.py
+*.eps
