@@ -64,6 +64,7 @@ class ConvBlock(nn.Module):
     def __init__(self, input_shape, filter_dim):
         super(ConvBlock, self).__init__()
         n_signals = int(input_shape[0])
+        """
         self.block = nn.Sequential(
                 nn.MaxPool2d((2, 2), stride=(2, 2)),
                 Conv2dWithBn(n_signals, filter_size=(3, 3), n_filters=filter_dim, stride=1),
@@ -75,7 +76,16 @@ class ConvBlock(nn.Module):
                 Conv2dWithBn(filter_dim, filter_size=(3, 3), n_filters=filter_dim, stride=1),
                 nn.MaxPool2d((2, 4), stride=(2, 4)),
             )
-
+        """
+        self.block = nn.Sequential(
+            Conv2dWithBn(n_signals, filter_size=(2, 2), n_filters=filter_dim, stride=2),
+            Conv2dWithBn(n_signals, filter_size=(3, 3), n_filters=filter_dim, stride=1),
+            Conv2dWithBn(n_signals, filter_size=(2, 2), n_filters=filter_dim, stride=2),
+            Conv2dWithBn(filter_dim, filter_size=(3, 3), n_filters=filter_dim, stride=1),
+            Conv2dWithBn(filter_dim, filter_size=(3, 3), n_filters=filter_dim, stride=3),
+            Conv2dWithBn(filter_dim, filter_size=(3, 3), n_filters=filter_dim, stride=1),
+            Conv2dWithBn(filter_dim, filter_size=(2, 4), n_filters=filter_dim, stride=(2,4))
+        )
         outdim = _get_output_dim(self.block, input_shape)
 
     def forward(self, x):
@@ -96,11 +106,11 @@ class Conv2DTranslation(nn.Module):
             while to_dims[i] >= dim * 4:
                 stacks[i].append((4, 4))
                 dim = dim * 4
-                print(to_dims[i], dim)
+                #print(to_dims[i], dim)
             while to_dims[i] >= dim * 2:
                 stacks[i].append((2, 2))
                 dim *= 2
-                print(to_dims[i], dim)
+                #print(to_dims[i], dim)
             if to_dims[i] != dim:
                 stacks[i].append((to_dims[i]- dim + 1, 1))
 
@@ -207,8 +217,9 @@ class DSSM(nn.Module):
         self.deconvolver = Conv2DTranslation([1,1], [self.observation_dim, self.subseq_len],
                                                   self.reduced_observ_dim, self.filter_size, self.n_signals)
 
-        out_size = _get_output_dim(self.deconvolver, conv_size[1:])
-        print("Deconvolver out-dim:", out_size)
+        if not self.sep_channels:
+            out_size = _get_output_dim(self.deconvolver, conv_size[1:])
+            print("Deconvolver out-dim:", out_size)
 
         # labler
         linear_stack = [self.hidden_size, self.hidden_size]
@@ -217,6 +228,9 @@ class DSSM(nn.Module):
             linear_module_list.append(nn.Linear(linear_stack[ls_id], linear_stack[ls_id+1]))
             linear_module_list.append(nn.BatchNorm1d(linear_stack[ls_id+1]))
             linear_module_list.append(nn.ReLU())
+            self.__setattr__("labler_lin" + str(ls_id), linear_module_list[-3])
+            self.__setattr__("labler_bn" + str(ls_id), linear_module_list[-2])
+            self.__setattr__("labler_relu" + str(ls_id), linear_module_list[-1])
 
         self.label_nn = nn.Sequential(*linear_module_list, nn.Linear(linear_stack[-1], self.out_size))
 
@@ -238,6 +252,9 @@ class DSSM(nn.Module):
         super(DSSM, self).train(mode=mode)
 
     def forward(self, batch, theta=None, filtering_mode=True, forecast_seq_len=0):
+        self.sequence_encoder.flatten_parameters()
+
+        print("BS:", batch.shape)
         #batch shape = [32, 4, 76, 1050] = [bs, n_channels, spectogram_dim, 50*(1+n_neighbours)]
 
         # print("Batch shape:", batch.shape)
@@ -280,8 +297,11 @@ class DSSM(nn.Module):
 
         # 2. Sequence prediction (Decoder)
         # ---------------------------------------
-        rec_loss = 0
-        kl_loss = 0
+        rec_loss = torch.tensor(0.).to(self.device)
+        kl_loss = torch.tensor(0.).to(self.device)
+
+        #kl_loss += torch.nn.MSELoss()(initial_state) + torch.nn.MSELoss()(theta) # should be cast to device prolly
+
         y_hat = []
 
         # (bs, n_signals, sub_seq_len(20sec), seq_len) -> (bs, reduced_obs, 1, seq_len)
@@ -289,8 +309,10 @@ class DSSM(nn.Module):
             cbatch = torch.cat([self.convolver_phase_2[j](batch[:, None, j]) for j in range(self.n_signals)], dim=1)
         else:
             cbatch = self.convolver_phase_2(batch)
+        #print("batch:", batch.shape)
+        #print("cbatch:", cbatch.shape)
         cbatch = torch.transpose(cbatch[:, :, 0, :], 1, 2)  # bs x seq_len x reduced_obs
-        # print("cbatch:", cbatch.shape)
+        #print("cbatch:", cbatch.shape)
         for i in range(self.n_samples):
             # predict next state
             h_dec, c_dec = self.state_transition(theta, (h_dec_prev, c_dec_prev)) #  bs x hidden
@@ -310,7 +332,7 @@ class DSSM(nn.Module):
             # Uncertainty scaling -- for the moment we have three options
             # Option 1: do not scale uncertainty
             # Option 2: scale entire uncertainty vector with one learnable scalar
-            # beta = beta * self.noise_scalar.expand_as(beta)
+            beta = beta * self.noise_scalar.expand_as(beta)
             # Option 3: scale uncertainty vector with a learnable vector
             # beta = beta * self.noise_vector
 
@@ -347,7 +369,10 @@ class DSSM(nn.Module):
             # print("Obs shape: ", obs.shape)
             # print("Pred shape: ", pred.shape)
             rec_loss += F.mse_loss(pred.contiguous().view(-1), obs.contiguous().view(-1))
-            kl_loss += self.kl_loss(beta_mean, beta_logvar)
+            if self.kl_weight > 0:
+                kl_loss_temp = self.kl_loss(beta_mean, beta_logvar)
+                if kl_loss_temp == kl_loss_temp:
+                    kl_loss += kl_loss_temp
 
             c_dec_prev = c_dec
             h_dec_prev = h_dec
@@ -365,8 +390,8 @@ class DSSM(nn.Module):
                  "reconstructions": torch.cat(obs_rc_sequence, dim=3),
                  "forecast": forecast,
                  "theta": theta,
-                 "logits": list_to_tensor(y_hat),
-                 "states": list_to_tensor(states)
+                 "logits": list_to_tensor(y_hat).to(self.device),
+                 "states": list_to_tensor(states).to(self.device)
                 }
 
     def forecast(self, h, c, theta, steps):
@@ -392,8 +417,8 @@ class DSSM(nn.Module):
 
     def kl_loss(self, mu, logvar):
         to_return = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
-        if to_return != to_return:
-            print(logvar, mu.pow(2), logvar.exp())
-            print("KLdiv:", to_return)
-            raise ValueError("KL divergence invalid!")
-        return to_return#F.relu(to_return) #TODO: Investigate! KL should never be <0 !!
+        #if to_return != to_return:
+        #    print(logvar, mu.pow(2), logvar.exp())
+        #    print("KLdiv:", to_return)
+        #    raise ValueError("KL divergence invalid!")
+        return F.relu(to_return) #TODO: Investigate! KL should never be <0 !!

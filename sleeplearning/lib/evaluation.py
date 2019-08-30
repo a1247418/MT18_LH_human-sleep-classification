@@ -247,6 +247,93 @@ def table_plot_(table, yticks, xticks, agg_table: bool = True):
     return fig
 
 
+def table_plot_folded_(table, yticks, xticks, agg_table: bool = False):
+    yticks = [y.replace("WESA_","").replace("_MLready.npz","") for y in yticks]
+    num_yticks = (len(yticks)+1) //2
+    max_yticks = len(yticks)
+    xticks = xticks + xticks
+    # m.configs]
+
+    min_val = min([min(t) for t in table])
+    max_val = max([max(t) for t in table])
+
+    aggs = np.stack([np.mean(table, 0), np.std(table, 0)], axis=0)
+
+    #fig = plt.figure(figsize=(8.27, 11.69), dpi=320, facecolor='w',
+    #                 edgecolor='k')
+    fig = plt.figure(figsize=(len(xticks), .5*num_yticks), dpi=120,
+                     facecolor='w',
+                                      edgecolor='k')
+
+    gs = gridspec.GridSpec(num_yticks + 4, len(xticks))
+    ax1 = fig.add_subplot(gs[:num_yticks, :(len(xticks)//2)])
+    ax1.imshow(table[:num_yticks], cmap='YlGn', aspect="auto", vmin=min_val, vmax=max_val)
+
+    for i, j in itertools.product(range(num_yticks),
+                                  range(table.shape[1])):
+        ax1.text(j, i, '{:.3f}'.format(table[i, j]),
+                 horizontalalignment="center", fontsize=10,
+                 verticalalignment='center', color="black")
+
+    ax2 = fig.add_subplot(gs[:num_yticks, (len(xticks)//2):])
+    ax2.imshow(table[num_yticks:], cmap='YlGn', aspect="auto", vmin=min_val, vmax=max_val)
+
+    for i, j in itertools.product(range(num_yticks, max_yticks),
+                                  range(table.shape[1])):
+        ax2.text(j, i-num_yticks, '{:.3f}'.format(table[i, j]),
+                 horizontalalignment="center", fontsize=10,
+                 verticalalignment='center', color="black")
+
+    ytick_marks = np.arange(num_yticks)
+    ax1.set_yticks(ytick_marks)
+    ax1.set_yticklabels(yticks[:num_yticks])
+    ax1.set_xticklabels([])
+    #plt.draw()
+    #yax = ax1.get_yaxis()
+    #pad = max(T.label.get_window_extent().width for T in yax.majorTicks)
+    #yax.set_tick_params(pad=pad)
+
+    ytick_marks = np.arange(num_yticks)
+    ax2.set_yticks(ytick_marks)
+    ax2.set_yticklabels(yticks[num_yticks:])
+    ax2.set_xticklabels([])
+
+    if agg_table:
+        ax3 = fig.add_subplot(gs[num_yticks + 1:, :])
+        ax3.imshow(aggs, cmap='YlGn', aspect="auto")
+        # ax2.set_aspect('equal', 'box')
+        # plt.imshow(table,cmap='Oranges')
+        for i, j in itertools.product(range(aggs.shape[0]),
+                                      range(aggs.shape[1])):
+            ax3.text(j, i, '{:.3f}'.format(aggs[i, j]),
+                     horizontalalignment="center", fontsize=10,
+                     verticalalignment='center', color="black")
+
+
+        ytick_marks = np.arange(2)
+        ax3.set_yticks(ytick_marks)
+        ax3.set_yticklabels(['mean', 'std'])
+
+        xtick_marks = np.arange(len(xticks) // 2)
+        ax3.set_xticks(xtick_marks)
+        ax3.set_xticklabels(xticks, rotation=60)
+
+        #ax1 = ax2
+
+    xtick_marks = np.arange(len(xticks)//2)
+    ax1.set_xticks(xtick_marks)
+    ax1.set_xticklabels(xticks, rotation=60)
+    ax1.tick_params(labelbottom=False, labeltop=True, labelleft=True, labelright=False,
+                         bottom=False, top=True, left=True, right=False)
+    ax2.set_xticks(xtick_marks)
+    ax2.set_xticklabels(xticks, rotation=60)
+    ax2.tick_params(labelbottom=False, labeltop=True, labelleft=False, labelright=True,
+                         bottom=False, top=True, left=False, right=True)
+
+
+    return fig
+
+
 class Model(object):
     def __init__(self, path):
         self.name = get_basename_(path)
@@ -296,12 +383,12 @@ class Evaluation(object):
                             cm.sum(axis=1)[:, np.newaxis] + 1e-7)
                 cm_norm = np.nan_to_num(cm_norm, copy=True)
 
-                fig, (ax1, ax2) = plt.subplots(2, 1,
-                                               figsize=(2.5,5),
-                                               dpi=120) #
+                fig, (ax2) = plt.subplots(1, 1,
+                                               figsize=(2.5,2.5),
+                                               dpi=200) #
                 plt.subplots_adjust(hspace=.05)
 
-                fig.suptitle(get_basename_(model.name)+"("+config.name+")",
+                fig.suptitle(get_basename_(model.name),
                              fontsize=8, weight="bold",y=0.93)
 
                 per_class_metrics = np.array(
@@ -310,11 +397,11 @@ class Evaluation(object):
                                                         5))).round(
                     2)
 
-                im = heatmap(per_class_metrics, ['PR', 'RE', 'F1', 'S'],
-                             ('W', 'N1', 'N2', 'N3', 'REM'),
-                             ax=ax1, cmap="YlGn", vmin=0,vmax=1e10,
-                             aspect='auto')
-                texts = annotate_heatmap(im, valfmt="{x:.2f} ")
+                #im = heatmap(per_class_metrics, ['PR', 'RE', 'F1', 'S'],
+                #             ('W', 'N1', 'N2', 'N3', 'REM'),
+                #             ax=ax1, cmap="YlGn", vmin=0,vmax=1e10,
+                #             aspect='auto')
+                #texts = annotate_heatmap(im, valfmt="{x:.2f} ")
 
                 im = heatmap(cm_norm, ('W', 'N1', 'N2', 'N3', 'REM'),
                              ('W', 'N1', 'N2', 'N3', 'REM'),
@@ -322,15 +409,20 @@ class Evaluation(object):
                              xlabel="Predicted Label", ylabel="True Label")
                 texts = annotate_heatmap(im, valfmt="{x:.2f} ")
 
-                ax2.get_shared_x_axes().join(ax1, ax2)
-                ax1.tick_params(axis="x", labelbottom=0)
+                #ax2.get_shared_x_axes().join(ax1, ax2)
+                #ax1.tick_params(axis="x", labelbottom=0)
 
-                ax1.tick_params(
-                    axis='x',  # changes apply to the x-axis
-                    which='both',  # both major and minor ticks are affected
-                    bottom=False,  # ticks along the bottom edge are off
-                    top=False,  # ticks along the top edge are off
-                    labelbottom=False)  # labels along the bottom edge are off
+                #ax1.tick_params(
+                #    axis='x',  # changes apply to the x-axis
+                #    which='both',  # both major and minor ticks are affected
+                #    bottom=False,  # ticks along the bottom edge are off
+                #    top=False,  # ticks along the top edge are off
+                #    labelbottom=False)  # labels along the bottom edge are off
+
+                try:
+                    plt.savefig("cv_plots/cv_cm_" + model.name + ".eps", dpi=300, transparent=True, bbox_inches="tight")
+                except:
+                    print("Failed saving plot.")
 
     def boxplot(self, xlabel=None, ymin=.4):
         models = []
@@ -496,7 +588,7 @@ class Evaluation(object):
         axarr[i, 0].set_xlabel("epoch", fontsize=10)
         plt.tight_layout(rect=[0, 0.03, 1, 0.95])
 
-    def table(self):
+    def table(self, folded=False):
         table = []
         for i, model in enumerate(self.models):
             for config in model.configs:
@@ -509,7 +601,14 @@ class Evaluation(object):
         table = np.vstack(table).T
         subjects = [get_basename_(p) for p in run.subjects]
         xticks = [m.name + '-' + r.name for m in self.models for r in m.configs]
-        table_plot_(table, subjects, xticks)
+        if folded:
+            table_plot_folded_(table, subjects, xticks)
+        else:
+            table_plot_(table, subjects, xticks)
+        try:
+            plt.savefig("cv_plots/cv_tab_" + model.name + ".eps", dpi=300, transparent=True, bbox_inches="tight")
+        except:
+            print("Failed saving plot.")
 
     def att_subject_table(self):
         att_models = []

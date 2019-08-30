@@ -12,7 +12,7 @@ mongo_url = 'mongodb://toor:y0qXDe3qumoawG0rPfnS@cab-e81-31/admin?authMechanism'
             '=SCRAM-SHA-1'
 MONGO_OBSERVER = MongoObserver.create(url=mongo_url, db_name='sacred')
 #ex.observers.append(MONGO_OBSERVER)
-LOGDIR = '../logs'
+LOGDIR = "/cluster/scratch/llorenz/logs"#'../logs'
 ex.observers.append(FileStorageObserver.create(LOGDIR))
 
 
@@ -33,6 +33,7 @@ def cfg():
         'data_dir': os.path.join('../data/sleepedf'),
         'train_csv': os.path.join('../cfg/sleepedf/cv_train.csv'),
         'val_csv': os.path.join('../cfg/sleepedf/cv_val.csv'),
+        'tune_csv': None,
         'batch_size_train': 32,
         'batch_size_val': 128,
         'loader': 'Sleepedf', #'Physionet18',
@@ -1972,9 +1973,9 @@ def DSSM_caro():
         'context': True, #TODO check if needed
         'train_emb': True, #TODO check if needed
         'weighted_loss': True,
-        'label_nbrs': True,
+        'label_nbrs': False,
         'kl_annealing': False,
-        'kl_weight': 50,
+        'kl_weight': 0,
         'reconstruction_weight': 1,
         'mmd_weight': 1
     }
@@ -1986,8 +1987,22 @@ def Sleep_Classifier_caro():
     ms = {
         'epochs': 100,
         'optim': 'adam,lr=0.0001',
-        'expert_models': [os.path.join('..', 'logs', 'cv_ready', 'caro', 'states')],
+        'expert_models': [os.path.join(LOGDIR, 'dssm_usv')],
         'weighted_loss': True
+    }
+
+
+@ex.named_config
+def Ensembler_caro():
+    arch = 'Ensembler'
+
+    ms = {
+        'epochs': 100,
+        'optim': 'adam,lr=0.00001',
+        'weighted_loss': True,
+        'expert_models': [os.path.join(LOGDIR, 'dssm1_'),
+                          os.path.join(LOGDIR, 'dssm2_'),
+                          os.path.join(LOGDIR, 'dssm3_')],
     }
 
 @ex.named_config
@@ -2002,11 +2017,11 @@ def AttentionNet_RS160_caro():
         'normalize_context': False,
         'context': True,
         'expert_models':
-            [os.path.join('..', 'logs', 'cv_ready', 'caro_new', 'EOGR'),
-             os.path.join('..', 'logs', 'cv_ready', 'caro_new', 'EMG'),
-             os.path.join('..', 'logs', 'cv_ready', 'caro_new', 'EOGL'),
-             os.path.join('..', 'logs', 'cv_ready', 'caro_new', 'EEG_raw'),
-             os.path.join('..', 'logs', 'cv_ready', 'caro_new', 'EEG')],
+            [os.path.join(LOGDIR, 'EOGR'),
+             os.path.join(LOGDIR, 'EMG'),
+             os.path.join(LOGDIR, 'EOGL'),
+             os.path.join(LOGDIR, 'EEG_raw'),
+             os.path.join(LOGDIR, 'EEG')],
         'train_emb': True,
         'weighted_loss': True
     }
@@ -2024,9 +2039,9 @@ def AttentionNet_RS160_edf():
         'normalize_context': False,
         'context': True,
         'expert_models':
-            [os.path.join('..', 'models', 'debug_edf_1'),
-             os.path.join('..', 'models', 'debug_edf_2'),
-             os.path.join('..', 'models', 'debug_edf_3')],
+            [os.path.join("/".join(LOGDIR.split("/")[:-1]), 'models', 'debug_edf_1'),
+             os.path.join("/".join(LOGDIR.split("/")[:-1]), 'models', 'debug_edf_2'),
+             os.path.join("/".join(LOGDIR.split("/")[:-1]), 'models', 'debug_edf_3')],
         'train_emb': True,
         'weighted_loss': True
     }
@@ -2038,20 +2053,20 @@ def sleepedf_all_2D():
         'loader': 'Sleepedf',
         'channels': [
             ('EEG-Pz-Oz', [
-                'BandPass(fs=100, lowpass=45, highpass=.5)',
-                'Spectrogram(fs=100, window=150, stride=100)',
+                'BandPass(fs=250, lowpass=45, highpass=.5)',
+                'Spectrogram(fs=250, window=150, stride=100)',
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'
             ]),
             ('EOG-horizontal', [
-                'BandPass(fs=100, lowpass=45, highpass=.5)',
-                'Spectrogram(fs=100, window=150, stride=100)',
+                'BandPass(fs=250, lowpass=45, highpass=.5)',
+                'Spectrogram(fs=250, window=150, stride=100)',
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'
             ]),
             ('EEG-Fpz-Cz', [
-                'BandPass(fs=100, lowpass=45, highpass=.5)',
-                'Spectrogram(fs=100, window=150, stride=100)',
+                'BandPass(fs=250, lowpass=45, highpass=.5)',
+                'Spectrogram(fs=250, window=150, stride=100)',
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'
             ])
@@ -2065,22 +2080,22 @@ def caro_all_2D():
         'loader': 'Carofile',
         'channels': [
             ('EEG', [
-                'Spectrogram(fs=100, window=150, stride=100)',
+                'Spectrogram(fs=250, window=150, stride=100)',
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'
             ]),
             ('EOGL', [
-                'Spectrogram(fs=100, window=150, stride=100)',
+                'Spectrogram(fs=250, window=150, stride=100)',
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'
             ]),
             ('EOGR', [
-                'Spectrogram(fs=100, window=150, stride=100)',
+                'Spectrogram(fs=250, window=150, stride=100)',
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'
             ]),
             ('EMG', [
-                'Spectrogram(fs=100, window=150, stride=100)',
+                'Spectrogram(fs=250, window=150, stride=100)',
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'
             ])
@@ -2095,29 +2110,29 @@ def caro_all_2D_no_sweat():
         'channels': [
             #  To filter out sweating artefacts
             ('EEG', [
-                'BandPass(fs=100, lowpass=45, highpass=1)',
-                'Spectrogram(fs=100, window=150, stride=100)',
+                'BandPass(fs=250, lowpass=45, highpass=1)',
+                'Spectrogram(fs=250, window=150, stride=100)',
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'
             ]),
             ('EEG_raw', [
-                'BandPass(fs=100, lowpass=1, highpass=0.1)',
-                'Spectrogram(fs=100, window=150, stride=100)',
+                'BandPass(fs=250, lowpass=1, highpass=0.1)',
+                'Spectrogram(fs=250, window=150, stride=100)',
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'
             ]),
             ('EOGL', [
-                'Spectrogram(fs=100, window=150, stride=100)',
+                'Spectrogram(fs=250, window=150, stride=100)',
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'
             ]),
             ('EOGR', [
-                'Spectrogram(fs=100, window=150, stride=100)',
+                'Spectrogram(fs=250, window=150, stride=100)',
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'
             ]),
             ('EMG', [
-                'Spectrogram(fs=100, window=150, stride=100)',
+                'Spectrogram(fs=250, window=150, stride=100)',
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'
             ])
@@ -2132,23 +2147,44 @@ def caro_all_2D_onesided():
         'osnbrs': True,
         'channels': [
             ('EEG', [
-                'Spectrogram(fs=100, window=150, stride=100)',
+                'Spectrogram(fs=250, window=150, stride=100)',
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'
             ]),
             ('EOGL', [
-                'Spectrogram(fs=100, window=150, stride=100)',
+                'Spectrogram(fs=250, window=150, stride=100)',
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'
             ]),
             ('EOGR', [
-                'Spectrogram(fs=100, window=150, stride=100)',
+                'Spectrogram(fs=250, window=150, stride=100)',
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'
             ]),
             ('EMG', [
-                'Spectrogram(fs=100, window=150, stride=100)',
+                'Spectrogram(fs=250, window=150, stride=100)',
                 'LogTransform()',
+                'TwoDFreqSubjScaler()'
+            ])
+        ]
+    }
+
+@ex.named_config
+def caro_all_2D_onesided_raw():
+    ds = {
+        'loader': 'Carofile',
+        'osnbrs': True,
+        'channels': [
+            ('EEG', [
+                'TwoDFreqSubjScaler()'
+            ]),
+            ('EOGL', [
+                'TwoDFreqSubjScaler()'
+            ]),
+            ('EOGR', [
+                'TwoDFreqSubjScaler()'
+            ]),
+            ('EMG', [
                 'TwoDFreqSubjScaler()'
             ])
         ]
@@ -2163,29 +2199,29 @@ def caro_all_2D_onesided_no_sweat():
         'channels': [
             #  To filter out sweating artefacts
             ('EEG', [
-                'BandPass(fs=100, lowpass=45, highpass=1)',
-                'Spectrogram(fs=100, window=150, stride=100)',
+                'BandPass(fs=250, lowpass=45, highpass=1)',
+                'Spectrogram(fs=250, window=150, stride=100)',
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'
             ]),
             ('EEG_raw', [
-                'BandPass(fs=100, lowpass=1, highpass=0.1)',
-                'Spectrogram(fs=100, window=150, stride=100)',
+                'BandPass(fs=250, lowpass=1, highpass=0.1)',
+                'Spectrogram(fs=250, window=150, stride=100)',
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'
             ]),
             ('EOGL', [
-                'Spectrogram(fs=100, window=150, stride=100)',
+                'Spectrogram(fs=250, window=150, stride=100)',
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'
             ]),
             ('EOGR', [
-                'Spectrogram(fs=100, window=150, stride=100)',
+                'Spectrogram(fs=250, window=150, stride=100)',
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'
             ]),
             ('EMG', [
-                'Spectrogram(fs=100, window=150, stride=100)',
+                'Spectrogram(fs=250, window=150, stride=100)',
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'
             ])
@@ -2198,7 +2234,7 @@ def caro_EMG_2D():
         'loader': 'Carofile',
         'channels': [
             ('EMG', [
-                'Spectrogram(fs=100, window=150, stride=100)',
+                'Spectrogram(fs=250, window=150, stride=100)',
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'
             ])
@@ -2213,7 +2249,7 @@ def caro_EOGL_2D():
         'loader': 'Carofile',
         'channels': [
             ('EOGL', [
-                'Spectrogram(fs=100, window=150, stride=100)',
+                'Spectrogram(fs=250, window=150, stride=100)',
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'
             ])
@@ -2227,7 +2263,7 @@ def caro_EOGR_2D():
         'loader': 'Carofile',
         'channels': [
             ('EOGR', [
-                'Spectrogram(fs=100, window=150, stride=100)',
+                'Spectrogram(fs=250, window=150, stride=100)',
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'
             ])
@@ -2241,7 +2277,7 @@ def caro_EEG_2D():
         'loader': 'Carofile',
         'channels': [
             ('EEG', [
-                'Spectrogram(fs=100, window=150, stride=100)',
+                'Spectrogram(fs=250, window=150, stride=100)',
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'
             ])
@@ -2255,8 +2291,8 @@ def caro_EEG_2D_no_sweat():
         'loader': 'Carofile',
         'channels': [
             ('EEG', [
-                'BandPass(fs=100, lowpass=1, highpass=0.1)',
-                'Spectrogram(fs=100, window=150, stride=100)',
+                'BandPass(fs=250, lowpass=1, highpass=0.1)',
+                'Spectrogram(fs=250, window=150, stride=100)',
                 'LogTransform()',
                 'TwoDFreqSubjScaler()'
             ])
